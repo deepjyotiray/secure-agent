@@ -123,4 +123,7 @@ index.js        # Entry point
 
 ## License
 
-MIT
+All Rights Reserved. © Deepjyoti Ray
+
+This source code is shared for reference and learning purposes only.
+You may not use, copy, modify, or distribute this code for commercial purposes without explicit written permission.
