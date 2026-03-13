@@ -1,0 +1,47 @@
+agent:
+  name: restaurant-agent
+  domain: food
+  version: "1.0.0"
+  description: "Ray's Home Kitchen — WhatsApp AI assistant"
+  chain:
+    - agents/support.yml
+
+  greet_message: "👋 Welcome to Ray's Home Kitchen!\n\nI can help you with:\n• View today's menu\n• Check your order status\n\nWhat would you like?"
+  help_message: "You can ask me to:\n• Show the menu\n• Check your order status"
+  out_of_domain_message: "Sorry, I can only help with food orders and menu queries."
+  restricted_message: "Sorry, I cannot perform that request."
+  error_message: "Something went wrong. Please try again."
+
+intents:
+  greet:
+    tool: static_greet
+    auth_required: false
+
+  help:
+    tool: static_help
+    auth_required: false
+
+  show_menu:
+    tool: rag_menu
+    auth_required: false
+
+  order_status:
+    tool: order_lookup
+    auth_required: false
+
+tools:
+  static_greet:
+    type: static
+
+  static_help:
+    type: static
+
+  rag_menu:
+    type: rag
+    vectordb_path: "./vectordb"
+    table: restaurant
+
+  order_lookup:
+    type: sqlite
+    db_path: "/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db"
+    table: orders
