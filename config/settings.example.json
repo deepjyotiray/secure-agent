@@ -19,6 +19,10 @@
     "keyword": "your-keyword",
     "pin": "your-pin",
     "db_path": "/absolute/path/to/your/orders.db",
-    "business_name": "Your Business Name"
+    "business_name": "Your Business Name",
+    "agent_llm": {
+      "model": "gpt-4o",
+      "api_key": "sk-your-openai-key-here"
+    }
   }
 }

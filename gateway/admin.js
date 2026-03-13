@@ -4,6 +4,7 @@ const { exec } = require("child_process")
 const Database = require("better-sqlite3")
 const settings = require("../config/settings.json")
 const { complete } = require("../providers/llm")
+const { runAgentLoop } = require("./adminAgent")
 const logger = require("./logger")
 
 const DB_PATH = settings.admin.db_path
@@ -173,9 +174,16 @@ Answer:`
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 async function handleAdmin(payload) {
-    if (!payload) return "⚙️ Admin ready. Usage: `ray <pin> <command or question>`"
+    if (!payload) return "⚙️ Admin ready. Usage: `ray <pin> <command or question>`\n`ray <pin> agent <task>` for full agentic mode"
 
     logger.info({ payload }, "admin: handling request")
+
+    // Agentic mode — full OpenAI function-calling loop
+    if (/^agent\s+/i.test(payload)) {
+        const task = payload.replace(/^agent\s+/i, "").trim()
+        logger.info({ task }, "admin: agentic mode")
+        return await runAgentLoop(task)
+    }
 
     if (looksLikeShell(payload)) {
         const result = await runShell(payload)
