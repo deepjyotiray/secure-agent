@@ -21,6 +21,10 @@ From their own WhatsApp number with a keyword + PIN:
 
 - Shell commands: `ray <pin> pm2 status`, `ray <pin> tail -n 50 logs/agent.log`
 - Natural language business queries: `ray <pin> how much profit this month`, `ray <pin> which orders are unpaid`, `ray <pin> show today's orders`
+- Mac automation: `ray <pin> set volume to 30`, `ray <pin> quit Chrome`, `ray <pin> show notification hello`
+- Browser automation: `ray <pin> open youtube and play lo-fi music`, `ray <pin> search DuckDuckGo for X and summarise`
+- Skills: `ray <pin> convert this text to speech`, `ray <pin> generate an image of a sunset`, `ray <pin> transcribe audio.mp3`
+- Security: `ray <pin> recon https://mysite.com`, `ray <pin> load test https://mysite.com`
 
 ## Architecture
 
@@ -51,13 +55,54 @@ support-agent  →  FAQ match + LLM with session memory + order context
 Admin notified on WhatsApp — name, orders, full conversation thread
 ```
 
-Declared in the manifest:
+### Admin Agent Loop
 
-```yaml
-agent:
-  chain:
-    - agents/support.yml
+The admin channel runs a full agentic loop (up to 20 turns) powered by `gpt-4o-mini`. The agent has access to 35+ tools and is self-healing — if a tool fails it diagnoses the error and retries with a different approach automatically.
+
 ```
+Admin WhatsApp message → keyword + PIN check → runAgentLoop(task) → tool calls → final answer → WhatsApp reply
+```
+
+Tool categories available to the admin agent:
+
+| Category | Tools |
+|----------|-------|
+| Shell | `run_shell` — pm2, tail, cat, ls, curl, node, npm, python3, pip3, uv |
+| Database | `query_db` (SELECT only), `update_order` |
+| Messaging | `send_whatsapp` |
+| Mac | `mac_automation` (AppleScript + shell), `youtube_play` |
+| Browser | `open_browser`, `navigate`, `snapshot`, `click`, `fill`, `type_text`, `press_key`, `read_page`, `scrape_page`, `scroll`, `wait_for_element`, `get_current_url`, `screenshot`, `close_browser` |
+| Network | `http_request`, `load_test`, `recon` |
+| Files | `write_file`, `read_file` |
+| Code | `npm_install`, `run_node` |
+| Skills | `run_skill` |
+| Misc | `server_health`, `list_tools` |
+
+### Browser Automation
+
+Browser tools use a persistent Playwright session (`@playwright/cli`). The snapshot/ref API is used for all interactions — no CSS selectors, no index-based clicks.
+
+```
+open_browser → snapshot → click {ref} / fill {ref, text} → get_current_url → close_browser
+```
+
+### YouTube Playback
+
+Playwright (headless) resolves the video URL from search results. Real Chrome (with login + autoplay) is opened via AppleScript. Spacebar triggers playback after a 3s wait.
+
+```
+open_browser (YouTube search) → sleep 4 → snapshot → click video ref → get_current_url → close_browser → youtube_play
+```
+
+### Skills Library
+
+34 OpenClaw curated skills are bundled in `skills/`. Each skill has a `SKILL.md` with instructions and a `scripts/` directory with ready-to-run scripts. The `run_skill` tool loads the skill, copies scripts to `tmp/skills/<name>/`, and returns the exact CLI command to run.
+
+Available skills:
+
+`speech` · `transcribe` · `imagegen` · `sora` · `pdf` · `slides` · `doc` · `spreadsheet` · `screenshot` · `playwright` · `playwright-interactive` · `figma` · `figma-implement-design` · `sentry` · `gh-fix-ci` · `gh-address-comments` · `netlify-deploy` · `vercel-deploy` · `cloudflare-deploy` · `render-deploy` · `security-best-practices` · `security-threat-model` · `security-ownership-map` · `notion-knowledge-capture` · `notion-meeting-intelligence` · `notion-research-documentation` · `notion-spec-to-implementation` · `linear` · `yeet` · `chatgpt-apps` · `openai-docs` · `jupyter-notebook` · `develop-web-game` · `aspnet-core` · `winui-app`
+
+Python skills run via `.venv/bin/python3` (project-root venv, `openai 2.28`). `OPENAI_API_KEY` is injected automatically from `settings.admin.agent_llm.api_key`.
 
 ### Intent Hints
 
@@ -85,6 +130,21 @@ The runtime routes all LLM calls through `providers/llm.js`. Switch providers by
 
 Supported providers: `ollama`, `openai`, `anthropic`
 
+The admin agent uses a separate `admin.agent_llm` block (OpenAI only, supports tool calling):
+
+```json
+{
+  "admin": {
+    "agent_llm": {
+      "provider": "openai",
+      "url": "https://api.openai.com/v1/chat/completions",
+      "model": "gpt-4o-mini",
+      "api_key": "<your-openai-key>"
+    }
+  }
+}
+```
+
 ### Session Memory
 
 Every customer has a 30-minute rolling conversation window. Follow-up messages carry full context. If a customer is mid-conversation with the support agent, short follow-up words ("Yes", "Okay", "Cancel it") skip the restaurant agent and go straight to support.
@@ -100,10 +160,13 @@ Three-layer resolution:
 ## Stack
 
 - **[Baileys](https://github.com/WhiskeySockets/Baileys)** — WhatsApp Web API, no official API needed
-- **[Ollama](https://ollama.com) + Llama 3** — local LLM (or swap to OpenAI / Anthropic)
+- **[Ollama](https://ollama.com) + Llama 3** — local LLM for customer pipeline (or swap to OpenAI / Anthropic)
+- **OpenAI gpt-4o-mini** — admin agent loop (tool calling)
+- **[Playwright](https://playwright.dev)** — headless browser automation for admin tasks
 - **[LanceDB](https://lancedb.com)** — local vector DB for menu RAG
 - **SQLite (better-sqlite3)** — orders, menu, users, coupons, expenses
-- **Node.js + pm2** — managed background process
+- **Node.js + pm2** — managed background process (`--max-old-space-size=512`)
+- **Python 3 (.venv)** — skill scripts (speech, imagegen, transcribe, sora, etc.)
 
 ## Project Structure
 
@@ -122,7 +185,7 @@ gateway/
   sanitizer.js          # Input sanitization (13 patterns)
   intentParser.js       # LLM intent classifier — generic, manifest-driven
   policyEngine.js       # Allowlist/blocklist enforcement
-  admin.js              # Admin channel — shell + NL business queries
+  adminAgent.js         # Admin agentic loop — 35+ tools, self-healing, 20-turn max
   logger.js             # Pino logger
 
 providers/
@@ -136,6 +199,7 @@ tools/
   sqliteTool.js         # Order lookup, invoice resend, QR generation
   supportTool.js        # FAQ match + LLM support + admin escalation
   buildQr.js            # Framed UPI QR image generator (Python/PIL)
+  computerTool.js       # Playwright browser automation (snapshot/ref API)
 
 transports/
   whatsapp.js           # Baileys transport
@@ -151,6 +215,33 @@ knowledge/
 policy/
   policy.yml            # Allowed/restricted intents + domain keywords
 
+skills/                 # 34 OpenClaw curated skills
+  speech/               # Text-to-speech (OpenAI TTS)
+  transcribe/           # Audio transcription (OpenAI Whisper)
+  imagegen/             # Image generation (DALL-E)
+  sora/                 # Video generation (Sora)
+  pdf/                  # PDF creation
+  slides/               # Presentation generation
+  doc/                  # Document generation
+  spreadsheet/          # Spreadsheet generation
+  screenshot/           # Web screenshot
+  playwright/           # Browser automation skill
+  figma/                # Figma integration
+  sentry/               # Sentry error monitoring
+  gh-fix-ci/            # GitHub CI fix
+  gh-address-comments/  # GitHub PR comment resolution
+  netlify-deploy/       # Netlify deployment
+  vercel-deploy/        # Vercel deployment
+  cloudflare-deploy/    # Cloudflare deployment
+  render-deploy/        # Render deployment
+  security-best-practices/
+  security-threat-model/
+  notion-*/             # Notion integrations (4 skills)
+  linear/               # Linear issue management
+  yeet/                 # Quick deploy
+  ...                   # + more
+
+.venv/                  # Python venv — openai 2.28, used by skill scripts
 config/
   settings.example.json
 
@@ -166,6 +257,10 @@ npm install
 
 cp config/settings.example.json config/settings.json
 # Edit config/settings.json — set llm provider, api.secret, admin block
+
+# Create Python venv for skill scripts
+python3 -m venv .venv
+.venv/bin/pip install openai
 
 # Seed the vector DB from your SQLite DB
 node seed.js --agent agents/restaurant.yml
@@ -195,6 +290,8 @@ node index.js --agent agents/restaurant.yml --transport cli
 | `admin.pin` | PIN required alongside the keyword |
 | `admin.db_path` | Absolute path to your SQLite database |
 | `admin.business_name` | Used in admin LLM prompts |
+| `admin.agent_llm.model` | Model for admin agent loop (default: `gpt-4o-mini`) |
+| `admin.agent_llm.api_key` | OpenAI key for admin agent + skill scripts |
 
 ### Agent Manifest Tool Config
 
@@ -271,6 +368,12 @@ No code changes required.
 <keyword> <pin> which orders are unpaid
 <keyword> <pin> show today's active orders
 <keyword> <pin> overall revenue this year
+<keyword> <pin> set volume to 30
+<keyword> <pin> open youtube and play lo-fi beats
+<keyword> <pin> recon https://mysite.com
+<keyword> <pin> load test https://mysite.com 50 requests
+<keyword> <pin> convert "hello world" to speech and send it
+<keyword> <pin> generate an image of a mountain at sunset
 ```
 
 ## Security
@@ -282,6 +385,7 @@ No code changes required.
 - WhatsApp session keys (`auth/`) are never committed
 - All inter-service calls use a shared secret header (`x-secret`)
 - No business data (DB path, UPI handle, phone numbers) is hardcoded in runtime code
+- `tmp/`, `out/`, `.playwright-cli/` are gitignored — no runtime artifacts committed
 
 ## License
 
