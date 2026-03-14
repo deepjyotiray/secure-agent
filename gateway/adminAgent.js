@@ -155,7 +155,7 @@ const TOOL_DEFINITIONS = [
         type: "function",
         function: {
             name: "open_in_chrome",
-            description: "Open a URL visibly in the user's Chrome browser (not headless). ONLY use this for viewing — you CANNOT interact with it (no type_text, click, etc.). For login or any interaction, use open_browser + navigate instead.",
+            description: "Open a URL in the user's visible Chrome browser using AppleScript. Use this when the task involves playing media, using the user's logged-in accounts (YouTube, Spotify web, etc.), or when the user says 'in Chrome'. After opening, use get_dom + click_by_index to interact with the page.",
             parameters: {
                 type: "object",
                 properties: { url: { type: "string", description: "Full URL to open" } },
@@ -723,6 +723,8 @@ BROWSER AUTOMATION RULES — ALWAYS FOLLOW:
 4. If get_dom shows no elements, call screenshot to see what's on screen, then wait and retry get_dom.
 5. For login flows: open_browser → get_dom → type_by_index username → type_by_index password → click_by_index submit → screenshot to verify → close_browser → return summary.
 6. Once you have taken a screenshot and completed the task, call close_browser and return your final answer immediately. Do NOT keep clicking or exploring after the task is done.
+7. For media tasks (play YouTube, Spotify, etc.): use mac_automation with AppleScript to open the URL in Chrome (e.g. 'tell app "Google Chrome" to open location "URL"'), then ALSO use open_browser + navigate to the same URL so you can interact with get_dom + click_by_index to actually click the first result and start playback. Never just search and stop — always click through to play.
+8. Never open a new Chrome window with open_in_chrome AND also open_browser for the same task — pick one approach. For tasks requiring the user's logged-in Chrome (YouTube, Gmail), use mac_automation AppleScript only.
 
 AVAILABLE TOOLS: run_shell, mac_automation, query_db, update_order, send_whatsapp, http_request, load_test, recon, server_health, open_browser, open_in_chrome, navigate, screenshot, click, type_text, press_key, read_page, scrape_page, scroll, wait_for_element, get_current_url, close_browser, get_dom, type_by_index, click_by_index, write_file, read_file, npm_install, run_node, list_tools`
         },
