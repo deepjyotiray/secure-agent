@@ -1,8 +1,9 @@
 "use strict"
 
-const http = require("http")
+const http     = require("http")
+const fs       = require("fs")
 const settings = require("../config/settings.json")
-const logger = require("../gateway/logger")
+const logger   = require("../gateway/logger")
 
 let _sock = null
 let _connected = false
@@ -35,10 +36,10 @@ const server = http.createServer(async (req, res) => {
     req.on("data", chunk => { body += chunk })
     req.on("end", async () => {
         try {
-            const { phone, message, mediaPath } = JSON.parse(body)
+            const { phone, message, mediaPath, imagePath } = JSON.parse(body)
 
-            if (!phone || !message) {
-                res.writeHead(400).end(JSON.stringify({ error: "phone and message required" }))
+            if (!phone || (!message && !mediaPath && !imagePath)) {
+                res.writeHead(400).end(JSON.stringify({ error: "phone and message or image required" }))
                 return
             }
 
@@ -54,10 +55,11 @@ const server = http.createServer(async (req, res) => {
 
             const jid = phone.replace(/^\+/, "") + "@s.whatsapp.net"
 
-            if (mediaPath) {
-                const fs = require("fs")
-                const image = fs.readFileSync(mediaPath)
-                await _sock.sendMessage(jid, { image, caption: message })
+            if (mediaPath || imagePath) {
+                const imgFile = mediaPath || imagePath
+                const image   = fs.readFileSync(imgFile)
+                const payload = message && message !== "📸" ? { image, caption: message } : { image }
+                await _sock.sendMessage(jid, payload)
             } else {
                 await _sock.sendMessage(jid, { text: message })
             }

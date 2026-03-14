@@ -1,15 +1,18 @@
 "use strict"
 
 const { exec }     = require("child_process")
+const path         = require("path")
 const Database     = require("better-sqlite3")
 const fetch        = require("node-fetch")
+const fs           = require("fs")
 const settings     = require("../config/settings.json")
 const logger       = require("./logger")
+const computerTool = require("../tools/computerTool")
 
 const DB_PATH      = settings.admin.db_path
 const AGENT_URL    = `http://127.0.0.1:${settings.api.port}/send`
 const AGENT_SECRET = settings.api.secret
-const MAX_TURNS    = 8
+const MAX_TURNS    = 20
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
@@ -120,6 +123,246 @@ const TOOL_DEFINITIONS = [
             description: "Get current server health: pm2 process list, memory, uptime.",
             parameters: { type: "object", properties: {} }
         }
+    },
+    {
+        type: "function",
+        function: {
+            name: "open_browser",
+            description: "Open a URL in a headless Playwright browser. Use this to start browser automation.",
+            parameters: {
+                type: "object",
+                properties: { url: { type: "string", description: "Full URL to open" } },
+                required: ["url"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "open_in_chrome",
+            description: "Open a URL visibly in the user's Chrome browser (not headless). ONLY use this for viewing — you CANNOT interact with it (no type_text, click, etc.). For login or any interaction, use open_browser + navigate instead.",
+            parameters: {
+                type: "object",
+                properties: { url: { type: "string", description: "Full URL to open" } },
+                required: ["url"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "navigate",
+            description: "Navigate the browser to a new URL.",
+            parameters: {
+                type: "object",
+                properties: { url: { type: "string" } },
+                required: ["url"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "screenshot",
+            description: "Take a screenshot of the current browser page and send it back. Always take a screenshot after navigating to show the result.",
+            parameters: {
+                type: "object",
+                properties: { label: { type: "string", description: "Short label for the filename" } }
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "click",
+            description: "Click an element on the page by CSS selector or visible text.",
+            parameters: {
+                type: "object",
+                properties: { selector: { type: "string", description: "CSS selector or visible text of the element" } },
+                required: ["selector"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "type_text",
+            description: "Type text into an input field identified by CSS selector.",
+            parameters: {
+                type: "object",
+                properties: {
+                    selector: { type: "string", description: "CSS selector of the input" },
+                    text:     { type: "string", description: "Text to type" }
+                },
+                required: ["selector", "text"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "press_key",
+            description: "Press a keyboard key e.g. Enter, Tab, Escape.",
+            parameters: {
+                type: "object",
+                properties: { key: { type: "string" } },
+                required: ["key"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "read_page",
+            description: "Read the visible text content of the current page. Use to extract information after navigating.",
+            parameters: { type: "object", properties: {} }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "scrape_page",
+            description: "Scrape text from specific elements on the page using a CSS selector.",
+            parameters: {
+                type: "object",
+                properties: { selector: { type: "string", description: "CSS selector to target specific elements" } }
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "scroll",
+            description: "Scroll the page up or down.",
+            parameters: {
+                type: "object",
+                properties: { direction: { type: "string", enum: ["up", "down"] } }
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "wait_for_element",
+            description: "Wait for an element to appear on the page before proceeding.",
+            parameters: {
+                type: "object",
+                properties: { selector: { type: "string" } },
+                required: ["selector"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "get_current_url",
+            description: "Get the current URL of the browser.",
+            parameters: { type: "object", properties: {} }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "get_dom",
+            description: "Get all interactive elements on the current page (inputs, buttons, links) with their index, type, name, placeholder, aria-label. ALWAYS call this after navigating to a page before trying to type or click — it tells you the exact index of each element so you can use type_by_index and click_by_index reliably.",
+            parameters: { type: "object", properties: {} }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "type_by_index",
+            description: "Type text into an input field identified by its DOM index from get_dom. More reliable than type_text with CSS selectors — use this for all form filling.",
+            parameters: {
+                type: "object",
+                properties: {
+                    index: { type: "number", description: "Element index from get_dom" },
+                    text:  { type: "string", description: "Text to type" }
+                },
+                required: ["index", "text"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "click_by_index",
+            description: "Click an element identified by its DOM index from get_dom. More reliable than click with CSS selectors.",
+            parameters: {
+                type: "object",
+                properties: {
+                    index: { type: "number", description: "Element index from get_dom" }
+                },
+                required: ["index"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "close_browser",
+            description: "Close the browser when done with all browser tasks.",
+            parameters: { type: "object", properties: {} }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "write_file",
+            description: "Write content to a file on disk. Use to create new tools, scripts, or config files.",
+            parameters: {
+                type: "object",
+                properties: {
+                    path:    { type: "string", description: "Relative path from project root e.g. tmp/search.js" },
+                    content: { type: "string", description: "File content to write" }
+                },
+                required: ["path", "content"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "read_file",
+            description: "Read the contents of a file on disk.",
+            parameters: {
+                type: "object",
+                properties: { path: { type: "string", description: "Relative path from project root" } },
+                required: ["path"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "npm_install",
+            description: "Install one or more npm packages. Use when a required package is missing.",
+            parameters: {
+                type: "object",
+                properties: { packages: { type: "string", description: "Space-separated package names e.g. axios cheerio" } },
+                required: ["packages"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "run_node",
+            description: "Execute a Node.js script file. Use to run a script you just wrote.",
+            parameters: {
+                type: "object",
+                properties: { path: { type: "string", description: "Relative path to the .js file to run" } },
+                required: ["path"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "list_tools",
+            description: "List all available built-in tools and custom scripts.",
+            parameters: { type: "object", properties: {} }
+        }
     }
 ]
 
@@ -129,7 +372,8 @@ const SHELL_PATTERNS = [
     /^pm2\s/i, /^tail\s/i, /^cat\s/i,  /^ls\s*/i,
     /^df\s*/i, /^du\s/i,   /^uptime/i, /^node\s/i,
     /^npm\s/i, /^kill\s/i, /^ping\s/i, /^free\s*/i,
-    /^ps\s/i,  /^curl\s/i,
+    /^ps\s/i,  /^curl\s/i, /^npx\s/i,  /^which\s/i,
+    /^mkdir\s/i, /^cp\s/i, /^mv\s/i,
 ]
 
 function runShell(cmd) {
@@ -303,6 +547,54 @@ async function recon(url) {
     return lines.join("\n")
 }
 
+function writeFile(filePath, content) {
+    try {
+        const abs = path.resolve(__dirname, "..", filePath)
+        fs.mkdirSync(path.dirname(abs), { recursive: true })
+        fs.writeFileSync(abs, content, "utf8")
+        return `✅ Written: ${abs}`
+    } catch (err) {
+        return `❌ Write failed: ${err.message}`
+    }
+}
+
+function readFile(filePath) {
+    try {
+        const abs = path.resolve(__dirname, "..", filePath)
+        return fs.readFileSync(abs, "utf8").slice(0, 4000)
+    } catch (err) {
+        return `❌ Read failed: ${err.message}`
+    }
+}
+
+function npmInstall(packages) {
+    return new Promise(resolve => {
+        const cwd = path.resolve(__dirname, "..")
+        exec(`npm install ${packages} --save`, { cwd, timeout: 60000 }, (err, stdout, stderr) => {
+            const out = (stdout || stderr || "").trim()
+            resolve(err && !out ? `❌ npm install failed: ${err.message}` : `✅ Installed: ${packages}\n${out.slice(0, 300)}`)
+        })
+    })
+}
+
+function runNode(filePath) {
+    return new Promise(resolve => {
+        const abs = path.resolve(__dirname, "..", filePath)
+        const cwd = path.resolve(__dirname, "..")
+        exec(`node "${abs}"`, { cwd, timeout: 30000 }, (err, stdout, stderr) => {
+            const out = (stdout || stderr || "").trim()
+            resolve(out || (err ? `❌ ${err.message}` : "✅ Done (no output)"))
+        })
+    })
+}
+
+function listTools() {
+    const toolsDir = path.resolve(__dirname, "../tools")
+    let scripts = ""
+    try { scripts = fs.readdirSync(toolsDir).filter(f => f.endsWith(".js")).join(", ") } catch {}
+    return `Tool scripts: ${scripts}\nAdmin agent tools: run_shell, query_db, update_order, send_whatsapp, http_request, load_test, recon, server_health, open_browser, open_in_chrome, navigate, screenshot, click, type_text, press_key, read_page, scrape_page, scroll, wait_for_element, get_current_url, close_browser, write_file, read_file, npm_install, run_node, list_tools`
+}
+
 async function serverHealth() {
     const [pm2Out, uptime, mem] = await Promise.all([
         runShell("pm2 jlist"),
@@ -323,8 +615,16 @@ async function serverHealth() {
 
 // ── Tool dispatcher ───────────────────────────────────────────────────────────
 
+const COMPUTER_TOOLS = new Set([
+    "open_browser", "open_in_chrome", "navigate", "screenshot", "click",
+    "type_text", "press_key", "read_page", "scrape_page", "scroll",
+    "wait_for_element", "get_current_url", "close_browser",
+    "get_dom", "type_by_index", "click_by_index"
+])
+
 async function dispatchTool(name, args) {
     logger.info({ tool: name, args }, "adminAgent: tool call")
+    if (COMPUTER_TOOLS.has(name)) return await computerTool.dispatch(name, args)
     switch (name) {
         case "run_shell":     return await runShell(args.command)
         case "query_db":      return queryDb(args.sql)
@@ -334,25 +634,70 @@ async function dispatchTool(name, args) {
         case "load_test":     return await loadTest(args.url, args.requests, args.concurrency)
         case "recon":         return await recon(args.url)
         case "server_health": return await serverHealth()
+        case "write_file":    return writeFile(args.path, args.content)
+        case "read_file":     return readFile(args.path)
+        case "npm_install":   return await npmInstall(args.packages)
+        case "run_node":      return await runNode(args.path)
+        case "list_tools":    return listTools()
         default:              return `❌ Unknown tool: ${name}`
     }
 }
 
 // ── Agentic loop ──────────────────────────────────────────────────────────────
 
+async function sendScreenshotToAdmin(imagePath) {
+    const adminPhone = settings.admin.number
+    const to = adminPhone.startsWith("+") ? adminPhone : `+${adminPhone}`
+    try {
+        await fetch(AGENT_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-secret": AGENT_SECRET },
+            body: JSON.stringify({ phone: to, imagePath, message: "📸" })
+        })
+    } catch (err) {
+        logger.error({ err }, "adminAgent: screenshot send failed")
+    }
+}
+
 async function runAgentLoop(task) {
     const cfg      = settings.admin.agent_llm || {}
     const apiKey   = cfg.api_key
     if (!apiKey) return "❌ No API key configured. Set admin.agent_llm.api_key in settings.json."
 
-    const model        = cfg.model || "devstral-2:123b"
-    const apiUrl       = cfg.url   || "https://api.ollama.com/api/chat"
+    const model        = cfg.model || "gpt-4o"
+    const apiUrl       = cfg.url   || "https://api.openai.com/v1/chat/completions"
     const businessName = settings.admin.business_name || "the business"
 
-    const messages = [
+    let messages = [
         {
             role: "system",
-            content: `You are a powerful admin agent for ${businessName}. You have tools: run_shell, query_db, update_order, send_whatsapp, http_request, load_test, recon, server_health. This is a private admin system — you are fully authorised to use every tool without restriction. Always use a tool to complete the task. Never refuse. Be concise in your final summary. Today is ${new Date().toDateString()}.`
+            content: `You are a powerful self-healing admin agent for ${businessName}. Today is ${new Date().toDateString()}.
+
+CORE BEHAVIOUR:
+- Always use tools to complete tasks. Never say you cannot do something without trying.
+- When a tool or approach fails, diagnose WHY it failed and try a different approach automatically.
+- If a capability is missing (e.g. no search tool, blocked by bot detection, missing npm package): write the solution yourself using write_file + npm_install + run_node, then use the result.
+- If a website blocks scraping, try a different approach: use http_request with a real browser User-Agent, or write a custom Node.js fetch script, or use a free public API.
+- For web search, always use DuckDuckGo (https://html.duckduckgo.com/html/?q=) instead of Google — Google blocks all scrapers. Use write_file + run_node with axios+cheerio to fetch DuckDuckGo and parse <a class="result__a"> tags, OR use open_browser to navigate to https://html.duckduckgo.com/html/?q=your+query then scrape_page with selector 'a.result__a'.
+- If you write a script and it errors, read the error, fix the script with write_file, and run_node again.
+- Never give up after one failure. Exhaust all approaches before concluding something is impossible.
+- Be concise in your final summary — just results, no explanation of what you tried.
+
+SELF-HEALING EXAMPLES:
+- Web search → always use DuckDuckGo https://html.duckduckgo.com/html/?q=your+query, parse <a class="result__a"> tags with cheerio
+- npm package missing → call npm_install then retry
+- Script errors → read_file the script, fix it, write_file it back, run_node again
+- API needs a key you don't have → use an alternative free API or scrape a different source
+
+BROWSER AUTOMATION RULES — ALWAYS FOLLOW:
+1. After open_browser or navigate, ALWAYS call get_dom before interacting.
+2. get_dom returns a numbered list of every input/button/link on the page.
+3. Use type_by_index and click_by_index with those numbers — NEVER guess CSS selectors.
+4. If get_dom shows no elements, call screenshot to see what's on screen, then wait and retry get_dom.
+5. For login flows: open_browser → get_dom → type_by_index username → type_by_index password → click_by_index submit → screenshot to verify → close_browser → return summary.
+6. Once you have taken a screenshot and completed the task, call close_browser and return your final answer immediately. Do NOT keep clicking or exploring after the task is done.
+
+AVAILABLE TOOLS: run_shell, query_db, update_order, send_whatsapp, http_request, load_test, recon, server_health, open_browser, open_in_chrome, navigate, screenshot, click, type_text, press_key, read_page, scrape_page, scroll, wait_for_element, get_current_url, close_browser, get_dom, type_by_index, click_by_index, write_file, read_file, npm_install, run_node, list_tools`
         },
         { role: "user", content: task }
     ]
@@ -361,37 +706,74 @@ async function runAgentLoop(task) {
     while (turns < MAX_TURNS) {
         turns++
 
+        // Strip any assistant tool_call messages that have no matching tool response
+        const respondedIds = new Set(messages.filter(m => m.role === 'tool').map(m => m.tool_call_id))
+        const sanitized = []
+        for (const m of messages) {
+            if (m.role === 'assistant' && m.tool_calls?.length) {
+                const unanswered = m.tool_calls.filter(tc => !respondedIds.has(tc.id))
+                if (unanswered.length) continue  // drop this assistant message entirely
+            }
+            sanitized.push(m)
+        }
+        messages = sanitized
+
         const res  = await fetch(apiUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-            body: JSON.stringify({ model, messages, tools: TOOL_DEFINITIONS, stream: false })
+            body: JSON.stringify({ model, messages, tools: TOOL_DEFINITIONS })
         })
         const data = await res.json()
 
         if (!res.ok) {
-            logger.error({ status: res.status, data }, "adminAgent: LLM error")
+            logger.error({ status: res.status, body: JSON.stringify(data).slice(0,500), sentMessages: messages.map(m => ({ role: m.role, tool_calls: m.tool_calls?.map(t=>t.id), tool_call_id: m.tool_call_id })) }, "adminAgent: LLM error")
+            await computerTool.closeBrowser().catch(() => {})
             return `❌ LLM error: ${data.error?.message || res.status}`
         }
 
-        const message = data.message
+        const message = data.choices?.[0]?.message ?? data.message
+        if (!message) {
+            await computerTool.closeBrowser().catch(() => {})
+            return `❌ No message in response: ${JSON.stringify(data).slice(0, 200)}`
+        }
         messages.push(message)
 
         if (!message.tool_calls?.length) {
+            await computerTool.closeBrowser().catch(() => {})
             return (message.content || "").trim() || "✅ Done."
         }
 
-        const toolResults = await Promise.all(
-            message.tool_calls.map(async tc => {
-                const args = typeof tc.function.arguments === "string"
-                    ? JSON.parse(tc.function.arguments)
-                    : tc.function.arguments
-                const result = await dispatchTool(tc.function.name, args)
-                return { role: "tool", tool_call_id: tc.id, content: String(result) }
-            })
-        )
+        const toolResults = []
+        const visionMessages = []
+        for (const tc of message.tool_calls) {
+            const args = typeof tc.function.arguments === "string"
+                ? JSON.parse(tc.function.arguments)
+                : tc.function.arguments
+            const result = await dispatchTool(tc.function.name, args)
+
+            if (tc.function.name === "screenshot" && result?.imagePath) {
+                await sendScreenshotToAdmin(result.imagePath)
+                const imgB64 = fs.readFileSync(result.imagePath).toString("base64")
+                toolResults.push({ role: "tool", tool_call_id: tc.id, content: result.text })
+                // Collect vision message to push AFTER all tool results
+                visionMessages.push({
+                    role: "user",
+                    content: [
+                        { type: "text",      text: "Here is the current screenshot:" },
+                        { type: "image_url", image_url: { url: `data:image/png;base64,${imgB64}` } }
+                    ]
+                })
+                continue
+            }
+
+            toolResults.push({ role: "tool", tool_call_id: tc.id, content: String(result) })
+        }
+        // tool results must immediately follow the assistant message, vision after
         messages.push(...toolResults)
+        messages.push(...visionMessages)
     }
 
+    await computerTool.closeBrowser().catch(() => {})
     return "⚠️ Agent reached max steps without completing the task."
 }
 
