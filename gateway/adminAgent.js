@@ -32,6 +32,21 @@ const TOOL_DEFINITIONS = [
     {
         type: "function",
         function: {
+            name: "mac_automation",
+            description: "Run AppleScript or shell commands to control the Mac: quit/open apps, set volume, show notifications, get battery, control Spotify/Music, move windows, take screenshots, type text into any app, click UI elements. Examples: quit Chrome, open Finder, set volume to 50, show notification, get frontmost app.",
+            parameters: {
+                type: "object",
+                properties: {
+                    script: { type: "string", description: "AppleScript to run via osascript -e, OR a shell command like killall/open/screencapture" },
+                    type:   { type: "string", enum: ["applescript", "shell"], description: "applescript runs via osascript -e, shell runs directly" }
+                },
+                required: ["script", "type"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
             name: "query_db",
             description: "Run a read-only SQL SELECT query on the orders database.",
             parameters: {
@@ -369,11 +384,13 @@ const TOOL_DEFINITIONS = [
 // ── Shell allowlist ───────────────────────────────────────────────────────────
 
 const SHELL_PATTERNS = [
-    /^pm2\s/i, /^tail\s/i, /^cat\s/i,  /^ls\s*/i,
-    /^df\s*/i, /^du\s/i,   /^uptime/i, /^node\s/i,
-    /^npm\s/i, /^kill\s/i, /^ping\s/i, /^free\s*/i,
-    /^ps\s/i,  /^curl\s/i, /^npx\s/i,  /^which\s/i,
-    /^mkdir\s/i, /^cp\s/i, /^mv\s/i,
+    /^pm2\s/i,      /^tail\s/i,     /^cat\s/i,      /^ls\s*/i,
+    /^df\s*/i,      /^du\s/i,       /^uptime/i,     /^node\s/i,
+    /^npm\s/i,      /^kill\s/i,     /^ping\s/i,     /^free\s*/i,
+    /^ps\s/i,       /^curl\s/i,     /^npx\s/i,      /^which\s/i,
+    /^mkdir\s/i,    /^cp\s/i,       /^mv\s/i,
+    /^osascript\s/i, /^killall\s/i, /^pkill\s/i,    /^open\s/i,
+    /^screencapture\s/i, /^say\s/i, /^defaults\s/i, /^launchctl\s/i,
 ]
 
 function runShell(cmd) {
@@ -622,11 +639,21 @@ const COMPUTER_TOOLS = new Set([
     "get_dom", "type_by_index", "click_by_index"
 ])
 
+function runMacAutomation(script, type) {
+    return new Promise(resolve => {
+        const cmd = type === "applescript" ? `osascript -e '${script.replace(/'/g, "'\''")}'` : script
+        exec(cmd, { timeout: 15000 }, (err, stdout, stderr) =>
+            resolve(err ? `❌ ${stderr || err.message}` : (stdout.trim() || "✅ Done"))
+        )
+    })
+}
+
 async function dispatchTool(name, args) {
     logger.info({ tool: name, args }, "adminAgent: tool call")
     if (COMPUTER_TOOLS.has(name)) return await computerTool.dispatch(name, args)
     switch (name) {
         case "run_shell":     return await runShell(args.command)
+        case "mac_automation": return await runMacAutomation(args.script, args.type)
         case "query_db":      return queryDb(args.sql)
         case "update_order":  return updateOrder(args.order_id, args.delivery_status, args.payment_status)
         case "send_whatsapp": return await sendWhatsapp(args.phone, args.message)
@@ -697,7 +724,7 @@ BROWSER AUTOMATION RULES — ALWAYS FOLLOW:
 5. For login flows: open_browser → get_dom → type_by_index username → type_by_index password → click_by_index submit → screenshot to verify → close_browser → return summary.
 6. Once you have taken a screenshot and completed the task, call close_browser and return your final answer immediately. Do NOT keep clicking or exploring after the task is done.
 
-AVAILABLE TOOLS: run_shell, query_db, update_order, send_whatsapp, http_request, load_test, recon, server_health, open_browser, open_in_chrome, navigate, screenshot, click, type_text, press_key, read_page, scrape_page, scroll, wait_for_element, get_current_url, close_browser, get_dom, type_by_index, click_by_index, write_file, read_file, npm_install, run_node, list_tools`
+AVAILABLE TOOLS: run_shell, mac_automation, query_db, update_order, send_whatsapp, http_request, load_test, recon, server_health, open_browser, open_in_chrome, navigate, screenshot, click, type_text, press_key, read_page, scrape_page, scroll, wait_for_element, get_current_url, close_browser, get_dom, type_by_index, click_by_index, write_file, read_file, npm_install, run_node, list_tools`
         },
         { role: "user", content: task }
     ]
