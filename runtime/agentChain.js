@@ -71,11 +71,12 @@ class AgentChain {
             const agentName = manifest.agent.name
             const skipDomainGate = manifest.agent.skip_domain_gate === true
 
-            // If a previous agent handled this session, keep follow-ups with that agent
+            // Short follow-ups (≤3 words) stay with the last agent that responded
+            // BUT only if the message has no domain keywords — explicit menu/order queries always go to restaurant-agent
             const lastAgent = getLastAgent(phone)
             if (lastAgent && lastAgent !== agentName) {
                 const wordCount = message.trim().split(/\s+/).length
-                if (wordCount <= 3) {
+                if (wordCount <= 3 && !isInDomain(message)) {
                     logger.info({ phone, agent: agentName, lastAgent }, "chain: follow-up, staying with last agent")
                     continue
                 }

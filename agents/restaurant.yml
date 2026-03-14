@@ -44,8 +44,7 @@ tools:
 
   rag_menu:
     type: rag
-    db_path: "/path/to/orders.db"
-    vectordb_path: "./vectordb"
+    db_path: "/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db"
     table: restaurant
     system_prompt: |
       You are a helpful assistant for Ray's Home Kitchen, a home-cooked food delivery service.
@@ -55,8 +54,7 @@ tools:
 
   order_lookup:
     type: sqlite
-    db_path: "/path/to/orders.db"
-    table: orders
+    db_path: "/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db"
     upi_handle: "XXXXXXXXXX@pthdfc"
     website: "yourdomain.com"
     brand_label: "yourdomain.com"
