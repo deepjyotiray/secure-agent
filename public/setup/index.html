@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SecureAI Business Agent Console</title>
+  <link rel="stylesheet" href="/setup/assets/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-topline">
+        <p class="eyebrow">SecureAI</p>
+        <button id="logout-btn" class="ghost small" type="button">Log Out</button>
+      </div>
+      <h1>Launch a fully customized business WhatsApp agent.</h1>
+      <p class="lede">Shape the brand, products, support rules, data access, compliance notes, admin controls, and integrations. Then test the live customer experience without leaving this screen.</p>
+      <div class="hero-card">
+        <div>
+          <span class="metric-label">Workspace</span>
+          <strong id="active-workspace-label">Loading…</strong>
+        </div>
+        <div>
+          <span class="metric-label">Mode</span>
+          <strong>Secure OpenClaw + Customer Agent Chain</strong>
+        </div>
+        <div>
+          <span class="metric-label">Surface</span>
+          <strong>Setup, generate, promote, and test from one console</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel workspace-panel">
+      <div class="panel-head">
+        <h2>Workspace</h2>
+        <p>Each workspace holds its own business profile, governance policy, approvals, and admin task history.</p>
+      </div>
+      <div class="workspace-toolbar">
+        <label>
+          <span>Active workspace</span>
+          <select id="workspace-select"></select>
+        </label>
+        <button id="workspace-apply-btn" class="ghost" type="button">Switch Workspace</button>
+        <label>
+          <span>New workspace ID</span>
+          <input id="new-workspace-input" placeholder="example: glowcare-clinic">
+        </label>
+        <button id="workspace-create-btn" class="secondary" type="button">Create Workspace</button>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <div class="workspace-main">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Business Profile</h2>
+            <p>Everything here is saved locally and used to generate your manifests, FAQs, policy, and settings.</p>
+          </div>
+
+          <form id="profile-form" class="grid">
+            <div class="section-label wide">Brand</div>
+            <label>
+              <span>Business name</span>
+              <input name="businessName" required>
+              <small class="field-help">Enter the public brand name customers recognize. Example: Ray's Home Kitchen, GlowCare Clinic, UrbanTrim Salon.</small>
+            </label>
+            <label>
+              <span>Business type</span>
+              <input name="businessType" placeholder="restaurant, salon, clinic, retail, service business">
+              <small class="field-help">Use a simple category so the agent picks the right tone and workflows. Example: clinic, restaurant, dental practice, repair service.</small>
+            </label>
+            <label>
+              <span>Brand tagline</span>
+              <input name="brandTagline" placeholder="Fresh, premium, local, trusted…">
+              <small class="field-help">Short sentence that captures the brand promise. Example: Healthy meals delivered fresh every day.</small>
+            </label>
+            <label>
+              <span>Brand voice</span>
+              <input name="brandVoice" placeholder="warm, crisp, premium, clinical, playful">
+              <small class="field-help">Describe how the agent should sound. Example: calm and clinical, warm and homely, premium and concise.</small>
+            </label>
+            <label class="wide">
+              <span>Target audience</span>
+              <input name="targetAudience" placeholder="Busy professionals, families, wellness-focused customers, local residents…">
+              <small class="field-help">Who is the agent speaking to most often. Example: working parents in Mumbai, diabetic patients, college students near the campus.</small>
+            </label>
+            <label class="wide">
+              <span>Description</span>
+              <textarea name="description" rows="4" placeholder="What does the business sell and how does it operate?"></textarea>
+              <small class="field-help">Give a crisp overview of the business model, what is sold, how fulfillment works, and anything distinctive.</small>
+            </label>
+            <label class="wide">
+              <span>Launch goals</span>
+              <textarea name="launchGoals" rows="3" placeholder="What should this agent improve first: sales, support, bookings, follow-ups, conversions, response speed?"></textarea>
+              <small class="field-help">Tell the agent what success looks like. Example: reduce missed WhatsApp leads, answer appointment questions instantly, increase repeat meal orders.</small>
+            </label>
+
+            <div class="section-label wide">Business Operations</div>
+            <label>
+              <span>Website</span>
+              <input name="website" placeholder="https://example.com">
+              <small class="field-help">Main business site or landing page. Example: https://healthymealspot.com</small>
+            </label>
+            <label>
+              <span>Website notes</span>
+              <input name="websiteNotes" placeholder="Important pages, forms, or content worth using">
+              <small class="field-help">Point out useful sections. Example: menu page, doctors page, pricing page, refund policy page.</small>
+            </label>
+            <label>
+              <span>Country code</span>
+              <input name="countryCode" value="91">
+              <small class="field-help">Phone country code used for customers and admins. Example: 91 for India, 1 for US.</small>
+            </label>
+            <label>
+              <span>Currency</span>
+              <input name="currency" value="₹">
+              <small class="field-help">Primary currency symbol. Example: ₹, $, AED.</small>
+            </label>
+            <label>
+              <span>Primary language</span>
+              <input name="language" value="English">
+              <small class="field-help">Main language customers use. Example: English, Hindi + English, Arabic.</small>
+            </label>
+            <label>
+              <span>Timezone</span>
+              <input name="timezone" value="Asia/Kolkata">
+              <small class="field-help">Timezone for hours and date logic. Example: Asia/Kolkata, Europe/London.</small>
+            </label>
+            <label>
+              <span>Contact email</span>
+              <input name="contactEmail" placeholder="hello@example.com">
+              <small class="field-help">Public support or business email if one exists.</small>
+            </label>
+            <label>
+              <span>Contact phone</span>
+              <input name="contactPhone" placeholder="+91…">
+              <small class="field-help">Main business phone customers should be told about if needed.</small>
+            </label>
+            <label class="wide">
+              <span>Address</span>
+              <input name="address" placeholder="Primary business address">
+              <small class="field-help">Use the public-facing branch or clinic address. Example: Shop 4, Carter Road, Bandra West, Mumbai.</small>
+            </label>
+            <label class="wide">
+              <span>Service areas</span>
+              <textarea name="serviceAreas" rows="2" placeholder="Cities, neighborhoods, delivery zones, remote coverage"></textarea>
+              <small class="field-help">List where the business serves customers. Example: Bandra, Khar, Santacruz for delivery; tele-consults across India.</small>
+            </label>
+            <label class="wide">
+              <span>Business hours</span>
+              <textarea name="businessHours" rows="2" placeholder="Mon-Fri 9am-8pm, Sat 10am-6pm…"></textarea>
+              <small class="field-help">Write operating hours in plain language. Example: Mon-Sat 10:00 AM to 8:00 PM, Sunday closed.</small>
+            </label>
+            <label class="wide">
+              <span>Holidays / closures</span>
+              <textarea name="holidays" rows="2" placeholder="Regular closures, holidays, seasonal shutdowns"></textarea>
+              <small class="field-help">Mention weekly off days or temporary shutdown windows.</small>
+            </label>
+
+            <div class="section-label wide">Products, Services, And Fulfillment</div>
+            <label class="wide">
+              <span>Offerings / catalog summary</span>
+              <textarea name="offerings" rows="5" placeholder="List products, services, packages, top sellers, categories, and customization options"></textarea>
+              <small class="field-help">Write the core catalog in plain text. Example: Meal plans, grilled bowls, diabetic-friendly breakfast, add-on protein, family combos.</small>
+            </label>
+            <label class="wide">
+              <span>Catalog notes</span>
+              <textarea name="catalogNotes" rows="3" placeholder="Availability rules, bundles, upsells, seasonal items, stock issues, lead times"></textarea>
+              <small class="field-help">Add constraints and selling context. Example: lunch bowls available only till 3 PM, festive thalis on weekends, MRI appointments need 24-hour notice.</small>
+            </label>
+            <label class="wide">
+              <span>Pricing notes</span>
+              <textarea name="pricingNotes" rows="3" placeholder="Price ranges, discounts, taxes, deposits, subscription rules, minimum order"></textarea>
+              <small class="field-help">Mention anything important that affects quoting. Example: consultation starts at ₹800, delivery free above ₹499, 20% advance for home visits.</small>
+            </label>
+            <label>
+              <span>Fulfillment mode</span>
+              <input name="fulfillmentMode" placeholder="delivery, pickup, appointments, subscriptions">
+              <small class="field-help">High-level delivery model. Example: appointments + walk-ins, delivery + pickup, remote consulting.</small>
+            </label>
+            <label>
+              <span>Ordering flow</span>
+              <input name="orderingFlow" placeholder="browse -> quote -> pay, cart -> checkout, inquiry -> confirm">
+              <small class="field-help">Explain the normal transaction path in arrows or short steps.</small>
+            </label>
+            <label class="wide">
+              <span>Booking flow</span>
+              <textarea name="bookingFlow" rows="2" placeholder="Appointments, scheduling, rescheduling, cancellation windows, confirmation steps"></textarea>
+              <small class="field-help">Useful for clinics, salons, and services. Example: choose doctor, choose slot, pay deposit, receive confirmation on WhatsApp.</small>
+            </label>
+            <label class="wide">
+              <span>Payment methods</span>
+              <textarea name="paymentMethods" rows="2" placeholder="UPI, cards, COD, subscriptions, invoices, bank transfer"></textarea>
+              <small class="field-help">List accepted payment rails and any rule around them. Example: UPI, cards, COD only for repeat customers.</small>
+            </label>
+
+            <div class="section-label wide">Support, Policy, And Safety</div>
+            <label class="wide">
+              <span>FAQ seed topics</span>
+              <textarea name="faqSeed" rows="4" placeholder="Common questions the agent must answer extremely well"></textarea>
+              <small class="field-help">Paste the top repetitive questions customers ask. Example: delivery time, refund eligibility, doctor availability, allergy-safe options.</small>
+            </label>
+            <label class="wide">
+              <span>Support policy</span>
+              <textarea name="supportPolicy" rows="3" placeholder="Support hours, service expectations, response windows, tone"></textarea>
+              <small class="field-help">Explain how support should behave. Example: respond within 15 minutes during business hours, always apologize before escalation.</small>
+            </label>
+            <label class="wide">
+              <span>Escalation policy</span>
+              <textarea name="escalationPolicy" rows="3" placeholder="When should the agent escalate to a human?"></textarea>
+              <small class="field-help">Be specific. Example: refund disputes, medical emergencies, angry customer complaints, VIP clients.</small>
+            </label>
+            <label class="wide">
+              <span>Refund / return policy</span>
+              <textarea name="refundPolicy" rows="3" placeholder="Refunds, replacements, reschedules, cancellations"></textarea>
+              <small class="field-help">Paste the actual rule so the assistant does not improvise.</small>
+            </label>
+            <label class="wide">
+              <span>Customer data rules</span>
+              <textarea name="customerDataRules" rows="3" placeholder="What private data can be shown, and what requires verification first?"></textarea>
+              <small class="field-help">Example: order status can be shown by matching phone number; medical records require DOB + registered phone verification.</small>
+            </label>
+            <label class="wide">
+              <span>Compliance / safety notes</span>
+              <textarea name="complianceNotes" rows="3" placeholder="Medical, legal, privacy, allergies, age limits, safety, regulated language"></textarea>
+              <small class="field-help">Add regulated boundaries. Example: do not diagnose conditions, avoid legal advice, never promise guaranteed outcomes.</small>
+            </label>
+
+            <div class="section-label wide">Integrations And Knowledge</div>
+            <label>
+              <span>Existing SQLite DB path</span>
+              <input name="dbPath" placeholder="/absolute/path/to/db.sqlite">
+              <small class="field-help">Only fill this if you already have a SQLite database to connect. Example: /Users/name/app/data/orders.db</small>
+            </label>
+            <label>
+              <span>Support tickets file</span>
+              <input name="ticketsFile" placeholder="/absolute/path/to/tickets.csv">
+              <small class="field-help">Optional. Add a CSV, JSON, or text file with past support issues so FAQs are grounded in real customer problems.</small>
+            </label>
+            <label>
+              <span>Extra context file</span>
+              <input name="extraContext" placeholder="/absolute/path/to/context.txt">
+              <small class="field-help">Optional notes file with SOPs, tone rules, hidden business context, or operating instructions.</small>
+            </label>
+            <label>
+              <span>Knowledge URLs</span>
+              <input name="knowledgeUrls" placeholder="Comma-separated docs or important URLs">
+              <small class="field-help">Paste links the agent should learn from. Example: menu page, FAQ page, Google Drive FAQ doc, booking instructions.</small>
+            </label>
+            <label class="wide">
+              <span>Integrations / systems</span>
+              <textarea name="integrations" rows="3" placeholder="CRM, ERP, Sheets, Notion, booking tool, delivery app, internal APIs"></textarea>
+              <small class="field-help">List the tools your business already uses. Example: Zoho CRM for leads, Google Sheets for inventory, Practo for appointments, Razorpay for payments, internal order API.</small>
+            </label>
+            <label class="toggle">
+              <span>Scrape website for business context</span>
+              <input name="scrapeWebsite" type="checkbox" checked>
+            </label>
+            <div class="wide toggle-help">Turn this on if your website has useful public information like services, policies, FAQs, menus, or staff pages.</div>
+
+            <div class="section-label wide">Admin And Security</div>
+            <label>
+              <span>Admin phone</span>
+              <input name="adminPhone" placeholder="919XXXXXXXXX">
+              <small class="field-help">The owner or operator phone allowed to trigger admin mode from WhatsApp.</small>
+            </label>
+            <label>
+              <span>Escalation phone</span>
+              <input name="escalationPhone" placeholder="Defaults to admin phone">
+              <small class="field-help">Where live support handoffs should go. Leave blank to reuse the admin phone.</small>
+            </label>
+            <label>
+              <span>Admin keyword</span>
+              <input name="adminKeyword" value="admin">
+              <small class="field-help">Secret prefix for admin commands. Example: admin, ray, operator.</small>
+            </label>
+            <label>
+              <span>Admin PIN</span>
+              <input name="adminPin" type="password">
+              <small class="field-help">Short PIN required after the admin keyword. Keep it private.</small>
+            </label>
+            <label class="wide">
+              <span>OpenAI API key</span>
+              <input name="openaiKey" type="password" placeholder="sk-...">
+              <small class="field-help">Required for generation and LLM-backed responses. Paste a valid API key starting with sk-.</small>
+            </label>
+          </form>
+
+          <div class="actions">
+            <button id="save-btn" class="ghost">Save Profile</button>
+            <button id="generate-btn" class="primary">Generate Draft Agent Pack</button>
+            <button id="promote-btn" class="secondary">Promote Draft Live</button>
+          </div>
+        </section>
+
+        <section class="panel results">
+          <div class="panel-head">
+            <h2>Generation Output</h2>
+            <p>Review the generated files before going live.</p>
+          </div>
+          <div id="generate-progress" class="progress-shell hidden" aria-hidden="true">
+            <div class="progress-head">
+              <strong id="generate-progress-label">Preparing draft generation…</strong>
+              <span id="generate-progress-value">0%</span>
+            </div>
+            <div class="progress-track">
+              <div id="generate-progress-bar" class="progress-bar"></div>
+            </div>
+          </div>
+          <div id="status" class="status">Loading profile…</div>
+          <div class="results-grid">
+            <div>
+              <h3>Detected intents</h3>
+              <ul id="intents"></ul>
+            </div>
+            <div>
+              <h3>FAQ topics</h3>
+              <ul id="faqs"></ul>
+            </div>
+          </div>
+          <div>
+            <h3>Draft files</h3>
+            <ul id="files" class="file-list"></ul>
+          </div>
+        </section>
+
+        <section class="panel admin-panel">
+          <div class="panel-head">
+            <h2>Admin Control Plane</h2>
+            <p>Run admin tasks, inspect governance, and approve gated actions here. WhatsApp remains a separate transport layer.</p>
+          </div>
+
+          <div class="admin-grid">
+            <div class="admin-card">
+              <h3>Admin Task Runner</h3>
+              <form id="admin-task-form" class="admin-task-form">
+                <label>
+                  <span>Execution mode</span>
+                  <select id="admin-task-mode">
+                    <option value="agent">Agent mode</option>
+                    <option value="query">Query mode</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Task</span>
+                  <textarea id="admin-task-input" rows="5" placeholder="Example: inspect pending approvals, check server health, and tell me if anything needs attention"></textarea>
+                  <small class="field-help">Agent mode runs the governed planner/executor. Query mode is for simple admin questions.</small>
+                </label>
+                <button class="secondary" type="submit">Run Admin Task</button>
+              </form>
+              <div id="admin-task-status" class="status">Admin control plane ready.</div>
+              <pre id="admin-task-output" class="code-block">No admin task run yet.</pre>
+            </div>
+
+            <div class="admin-card">
+              <div class="subhead">
+                <h3>Governance Snapshot</h3>
+                <button id="refresh-governance-btn" class="ghost small" type="button">Refresh</button>
+              </div>
+              <div id="governance-summary" class="status">Loading governance…</div>
+              <div class="results-grid governance-lists">
+                <div>
+                  <h4>Worker topology</h4>
+                  <ul id="governance-workers"></ul>
+                </div>
+                <div>
+                  <h4>Governed tools</h4>
+                  <ul id="governance-tools"></ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="admin-card approvals-card">
+            <div class="subhead">
+              <h3>Approval Queue</h3>
+              <button id="refresh-approvals-btn" class="ghost small" type="button">Refresh</button>
+            </div>
+            <p class="field-help">When risky actions are gated by policy, they appear here. Approve them in the UI, then rerun the task with the approval token.</p>
+            <div id="approvals-empty" class="status">No approvals loaded yet.</div>
+            <div id="approvals-list" class="approvals-list"></div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="workspace-side">
+        <section class="panel chat-panel sticky-panel">
+          <div class="panel-head">
+            <h2>Customer Chat Sandbox</h2>
+            <p>Chat with the live agent as a customer while you edit the business profile on the left.</p>
+          </div>
+          <div class="chat-controls">
+            <label>
+              <span>Test customer phone</span>
+              <input id="chat-phone" value="+919999999999">
+              <small class="field-help">Use any test number. Reuse the same number to preserve session memory across messages.</small>
+            </label>
+          </div>
+          <div id="chat-log" class="chat-log"></div>
+          <form id="chat-form" class="chat-compose">
+            <input id="chat-input" placeholder="Ask like a customer: What should I eat in this rain?">
+            <button class="primary" type="submit">Send</button>
+          </form>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <script src="/setup/assets/app.js"></script>
+</body>
+</html>

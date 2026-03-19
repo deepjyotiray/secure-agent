@@ -1,0 +1,61 @@
+{
+  "defaultRole": "super_admin",
+  "roles": {
+    "observer": {
+      "description": "Read-only access for inspection and diagnostics.",
+      "maxRisk": "medium"
+    },
+    "operator": {
+      "description": "Operational access for reversible actions.",
+      "maxRisk": "high"
+    },
+    "super_admin": {
+      "description": "Trusted admin access for most business operations.",
+      "maxRisk": "critical"
+    },
+    "system_admin": {
+      "description": "Full system access for local development and recovery.",
+      "maxRisk": "critical"
+    }
+  },
+  "workers": {
+    "planner": ["list_tools", "read_file", "query_db", "http_request", "server_health"],
+    "researcher": ["list_tools", "read_file", "query_db", "http_request", "load_test", "recon", "server_health", "open_browser", "navigate", "snapshot", "click", "fill", "type_text", "press_key", "read_page", "scrape_page", "scroll", "wait_for_element", "get_current_url", "screenshot", "close_browser", "open_in_chrome", "chrome_js"],
+    "operator": ["list_tools", "read_file", "query_db", "http_request", "load_test", "recon", "server_health", "open_browser", "navigate", "snapshot", "click", "fill", "type_text", "press_key", "read_page", "scrape_page", "scroll", "wait_for_element", "get_current_url", "screenshot", "close_browser", "send_whatsapp", "update_order", "run_shell", "mac_automation", "open_in_chrome", "chrome_js", "youtube_play"],
+    "coder": ["list_tools", "read_file", "write_file", "npm_install", "run_node", "run_shell", "http_request", "query_db", "run_skill"]
+  },
+  "tools": {
+    "run_shell": { "category": "system", "risk": "critical", "mutating": true, "approval": "explicit", "roles": ["operator", "super_admin", "system_admin"] },
+    "mac_automation": { "category": "system", "risk": "critical", "mutating": true, "approval": "explicit", "roles": ["operator", "super_admin", "system_admin"] },
+    "query_db": { "category": "data", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
+    "update_order": { "category": "data", "risk": "high", "mutating": true, "approval": "explicit", "roles": ["operator", "super_admin", "system_admin"] },
+    "send_whatsapp": { "category": "communication", "risk": "high", "mutating": true, "approval": "explicit", "roles": ["operator", "super_admin", "system_admin"] },
+    "http_request": { "category": "network", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
+    "load_test": { "category": "network", "risk": "medium", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
+    "recon": { "category": "network", "risk": "medium", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
+    "server_health": { "category": "system", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
+    "open_browser": { "category": "browser", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
+    "open_in_chrome": { "category": "browser", "risk": "high", "mutating": true, "approval": "explicit", "roles": ["operator", "super_admin", "system_admin"] },
+    "chrome_js": { "category": "browser", "risk": "high", "mutating": true, "approval": "explicit", "roles": ["operator", "super_admin", "system_admin"] },
+    "navigate": { "category": "browser", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
+    "screenshot": { "category": "browser", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
+    "snapshot": { "category": "browser", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
+    "click": { "category": "browser", "risk": "medium", "mutating": true, "approval": "task_intent", "roles": ["researcher", "operator", "super_admin", "system_admin"] },
+    "fill": { "category": "browser", "risk": "medium", "mutating": true, "approval": "task_intent", "roles": ["researcher", "operator", "super_admin", "system_admin"] },
+    "type_text": { "category": "browser", "risk": "medium", "mutating": true, "approval": "task_intent", "roles": ["researcher", "operator", "super_admin", "system_admin"] },
+    "press_key": { "category": "browser", "risk": "medium", "mutating": true, "approval": "task_intent", "roles": ["researcher", "operator", "super_admin", "system_admin"] },
+    "read_page": { "category": "browser", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
+    "scrape_page": { "category": "browser", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
+    "scroll": { "category": "browser", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
+    "wait_for_element": { "category": "browser", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
+    "get_current_url": { "category": "browser", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
+    "close_browser": { "category": "browser", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
+    "write_file": { "category": "filesystem", "risk": "high", "mutating": true, "approval": "explicit", "roles": ["coder", "super_admin", "system_admin"] },
+    "read_file": { "category": "filesystem", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "coder", "super_admin", "system_admin"] },
+    "npm_install": { "category": "filesystem", "risk": "critical", "mutating": true, "approval": "explicit", "roles": ["coder", "super_admin", "system_admin"] },
+    "run_node": { "category": "filesystem", "risk": "high", "mutating": true, "approval": "explicit", "roles": ["coder", "super_admin", "system_admin"] },
+    "list_tools": { "category": "meta", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "coder", "super_admin", "system_admin"] },
+    "youtube_play": { "category": "browser", "risk": "medium", "mutating": true, "approval": "task_intent", "roles": ["operator", "super_admin", "system_admin"] },
+    "run_skill": { "category": "filesystem", "risk": "high", "mutating": true, "approval": "explicit", "roles": ["coder", "operator", "super_admin", "system_admin"] }
+  }
+}

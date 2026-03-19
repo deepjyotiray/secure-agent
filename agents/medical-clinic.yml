@@ -1,0 +1,78 @@
+agent:
+  name: medical-clinic-agent
+  domain: medicalclinic
+  version: "1.0.0"
+  description: "You are the receptionist for a Hospital and Clinic"
+  chain:
+    - agents/support.yml
+  greet_message: "Welcome to Medical Clinic! How can I assist you today with your healthcare needs?"
+  help_message: "I can help you with booking appointments, checking appointment status, providing information about our services, and answering general inquiries."
+  out_of_domain_message: "I'm sorry, I can only assist with healthcare-related inquiries."
+  restricted_message: "Sorry, I cannot perform that request."
+  error_message: "Something went wrong. Please try again."
+
+intent_hints:
+  greet: "customer says hi, hello, hey or any greeting"
+  help: "customer asks what can you do or asks for help"
+  book_appointment: "customer wants to book a medical appointment"
+  check_appointment_status: "customer wants to check the status of their appointment"
+  inquire_services: "customer asks about the services offered by the clinic"
+  general_inquiry: "customer has a general question about the clinic"
+  escalate_issue: "customer needs to escalate an issue or speak to a human"
+
+intents:
+  greet:
+    tool: static_greet
+    auth_required: false
+  help:
+    tool: static_help
+    auth_required: false
+  book_appointment:
+    tool: appointment_booking
+    auth_required: false
+  check_appointment_status:
+    tool: appointment_status
+    auth_required: false
+  inquire_services:
+    tool: service_info
+    auth_required: false
+  general_inquiry:
+    tool: concierge
+    auth_required: false
+  escalate_issue:
+    tool: support_tool
+    auth_required: false
+
+tools:
+  static_greet:
+    type: static
+  static_help:
+    type: static
+  appointment_booking:
+    type: rag
+    db_path: "./data/medical-clinic.db"
+    vectordb_path: "./vectordb"
+    system_prompt: |
+      Provide assistance with booking medical appointments, including available dates and times.
+  appointment_status:
+    type: sqlite
+    db_path: "./data/medical-clinic.db"
+  service_info:
+    type: rag
+    db_path: "./data/medical-clinic.db"
+    vectordb_path: "./vectordb"
+    system_prompt: |
+      Provide detailed information about the services offered at the Medical Clinic.
+  concierge:
+    type: business_chat
+    business_name: "Medical Clinic"
+    cuisine: "healthcare services"
+    tone: "warm, reassuring, and professional"
+    greeting: "Welcome to Medical Clinic! How can I assist you today with your healthcare needs?"
+    signature_line: "I can help with appointments, services, clinic information, and general questions."
+  support_tool:
+    type: support
+    faq_path: "./agents/support/faq.yml"
+    db_path: "./data/medical-clinic.db"
+    business_name: "Medical Clinic"
+    escalation_phone: "919594614752"

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SecureAI Console Login</title>
+  <link rel="stylesheet" href="/setup/assets/styles.css">
+</head>
+<body>
+  <main class="login-shell">
+    <section class="login-card">
+      <p class="eyebrow">SecureAI</p>
+      <h1>Sign in to the business agent lab.</h1>
+      <p class="lede">This console previews a secure WhatsApp business agent with a customer-facing assistant and an owner-only OpenClaw-style operator brain.</p>
+      <form id="login-form" class="login-form">
+        <label>
+          <span>Username</span>
+          <input name="username" autocomplete="username" required>
+        </label>
+        <label>
+          <span>Password</span>
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="primary" type="submit">Enter SecureAI</button>
+      </form>
+      <div id="login-status" class="status">Use the shared demo credentials to continue.</div>
+    </section>
+  </main>
+
+  <script src="/setup/assets/login.js"></script>
+</body>
+</html>
