@@ -339,6 +339,101 @@ const server = http.createServer(async (req, res) => {
         return
     }
 
+    // GET /agent/intents
+    if (req.method === "GET" && pathname === "/agent/intents") {
+        if (req.headers["x-secret"] !== SECRET) { sendJson(res, 401, { error: "unauthorized" }); return }
+        try {
+            sendJson(res, 200, { intents: agentChain.getIntents() })
+        } catch (err) { sendJson(res, 500, { error: err.message }) }
+        return
+    }
+
+    // GET /agent/intents/:name
+    if (req.method === "GET" && pathname.startsWith("/agent/intents/")) {
+        if (req.headers["x-secret"] !== SECRET) { sendJson(res, 401, { error: "unauthorized" }); return }
+        try {
+            const name = pathname.replace("/agent/intents/", "")
+            sendJson(res, 200, agentChain.getIntent(name))
+        } catch (err) { sendJson(res, 404, { error: err.message }) }
+        return
+    }
+
+    // GET /agent/tools
+    if (req.method === "GET" && pathname === "/agent/tools") {
+        if (req.headers["x-secret"] !== SECRET) { sendJson(res, 401, { error: "unauthorized" }); return }
+        try {
+            sendJson(res, 200, { tools: agentChain.getTools() })
+        } catch (err) { sendJson(res, 500, { error: err.message }) }
+        return
+    }
+
+    // GET /agent/tools/:name
+    if (req.method === "GET" && pathname.startsWith("/agent/tools/")) {
+        if (req.headers["x-secret"] !== SECRET) { sendJson(res, 401, { error: "unauthorized" }); return }
+        try {
+            const name = pathname.replace("/agent/tools/", "")
+            sendJson(res, 200, agentChain.getTool(name))
+        } catch (err) { sendJson(res, 404, { error: err.message }) }
+        return
+    }
+
+    // POST /agent/intents  { name, tool, auth_required, hint }
+    if (req.method === "POST" && pathname === "/agent/intents") {
+        if (req.headers["x-secret"] !== SECRET) { sendJson(res, 401, { error: "unauthorized" }); return }
+        try {
+            const { name, tool, auth_required = false, hint } = await readBody(req)
+            if (!name || !tool) { sendJson(res, 400, { error: "name and tool required" }); return }
+            const intents = agentChain.addIntent(name, { tool, auth_required })
+            if (hint) agentChain.addIntentHint(name, hint)
+            logger.info({ name, tool }, "agent: intent added")
+            sendJson(res, 200, { ok: true, intent: name, intents })
+        } catch (err) {
+            sendJson(res, 500, { error: err.message })
+        }
+        return
+    }
+
+    // DELETE /agent/intents/:name
+    if (req.method === "DELETE" && pathname.startsWith("/agent/intents/")) {
+        if (req.headers["x-secret"] !== SECRET) { sendJson(res, 401, { error: "unauthorized" }); return }
+        try {
+            const name = pathname.replace("/agent/intents/", "")
+            const intents = agentChain.deleteIntent(name)
+            sendJson(res, 200, { ok: true, deleted: name, intents })
+        } catch (err) {
+            sendJson(res, 400, { error: err.message })
+        }
+        return
+    }
+
+    // POST /agent/tools  { name, type, ...config }
+    if (req.method === "POST" && pathname === "/agent/tools") {
+        if (req.headers["x-secret"] !== SECRET) { sendJson(res, 401, { error: "unauthorized" }); return }
+        try {
+            const { name, ...config } = await readBody(req)
+            if (!name || !config.type) { sendJson(res, 400, { error: "name and type required" }); return }
+            const tools = agentChain.addTool(name, config)
+            logger.info({ name, type: config.type }, "agent: tool added")
+            sendJson(res, 200, { ok: true, tool: name, tools })
+        } catch (err) {
+            sendJson(res, 500, { error: err.message })
+        }
+        return
+    }
+
+    // DELETE /agent/tools/:name
+    if (req.method === "DELETE" && pathname.startsWith("/agent/tools/")) {
+        if (req.headers["x-secret"] !== SECRET) { sendJson(res, 401, { error: "unauthorized" }); return }
+        try {
+            const name = pathname.replace("/agent/tools/", "")
+            const tools = agentChain.deleteTool(name)
+            sendJson(res, 200, { ok: true, deleted: name, tools })
+        } catch (err) {
+            sendJson(res, 400, { error: err.message })
+        }
+        return
+    }
+
     // GET /health
     if (req.method === "GET" && pathname === "/health") {
         sendJson(res, 200, agentChain.healthCheck())

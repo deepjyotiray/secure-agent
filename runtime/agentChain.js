@@ -24,17 +24,6 @@ class AgentChain {
         this._ready    = false
     }
 
-    loadAgent(manifestPath) {
-        const resolved = path.resolve(manifestPath)
-        if (!fs.existsSync(resolved)) throw new Error(`Manifest not found: ${resolved}`)
-        this._manifest = yaml.load(fs.readFileSync(resolved, "utf8"))
-        if (!this._manifest.agent?.name) throw new Error("Manifest missing agent.name")
-        if (!this._manifest.intents)     throw new Error("Manifest missing intents")
-        if (!this._manifest.tools)       throw new Error("Manifest missing tools")
-        this._ready = true
-        logger.info({ agent: this._manifest.agent.name }, "chain: loaded")
-    }
-
     async execute(message, phone) {
         if (!this._ready) throw new Error("AgentChain: call loadAgent() first.")
 
@@ -135,6 +124,93 @@ class AgentChain {
             agent:     this._manifest?.agent?.name,
             timestamp: new Date().toISOString(),
         }
+    }
+
+    getManifestPath() {
+        return this._manifestPath
+    }
+
+    loadAgent(manifestPath) {
+        const resolved = path.resolve(manifestPath)
+        if (!fs.existsSync(resolved)) throw new Error(`Manifest not found: ${resolved}`)
+        this._manifestPath = resolved
+        this._manifest = yaml.load(fs.readFileSync(resolved, "utf8"))
+        if (!this._manifest.agent?.name) throw new Error("Manifest missing agent.name")
+        if (!this._manifest.intents)     throw new Error("Manifest missing intents")
+        if (!this._manifest.tools)       throw new Error("Manifest missing tools")
+        this._ready = true
+        logger.info({ agent: this._manifest.agent.name }, "chain: loaded")
+    }
+
+    getIntents() {
+        if (!this._ready) throw new Error("No agent loaded")
+        const hints = this._manifest.intent_hints || {}
+        return Object.entries(this._manifest.intents).map(([name, cfg]) => ({
+            name,
+            tool: cfg.tool,
+            auth_required: cfg.auth_required ?? false,
+            hint: hints[name] || null,
+        }))
+    }
+
+    getIntent(name) {
+        if (!this._ready) throw new Error("No agent loaded")
+        const cfg = this._manifest.intents[name]
+        if (!cfg) throw new Error(`Intent '${name}' not found`)
+        return { name, tool: cfg.tool, auth_required: cfg.auth_required ?? false, hint: this._manifest.intent_hints?.[name] || null }
+    }
+
+    getTools() {
+        if (!this._ready) throw new Error("No agent loaded")
+        return Object.entries(this._manifest.tools).map(([name, cfg]) => ({ name, ...cfg }))
+    }
+
+    getTool(name) {
+        if (!this._ready) throw new Error("No agent loaded")
+        const cfg = this._manifest.tools[name]
+        if (!cfg) throw new Error(`Tool '${name}' not found`)
+        return { name, ...cfg }
+    }
+
+    addIntent(name, config) {
+        if (!this._ready) throw new Error("No agent loaded")
+        this._manifest.intents[name] = config
+        this._saveManifest()
+        return Object.keys(this._manifest.intents)
+    }
+
+    addIntentHint(name, hint) {
+        if (!this._ready) throw new Error("No agent loaded")
+        if (!this._manifest.intent_hints) this._manifest.intent_hints = {}
+        this._manifest.intent_hints[name] = hint
+        this._saveManifest()
+    }
+
+    addTool(name, config) {
+        if (!this._ready) throw new Error("No agent loaded")
+        this._manifest.tools[name] = config
+        this._saveManifest()
+        return Object.keys(this._manifest.tools)
+    }
+
+    deleteIntent(name) {
+        if (!this._ready) throw new Error("No agent loaded")
+        if (!this._manifest.intents[name]) throw new Error(`Intent '${name}' not found`)
+        delete this._manifest.intents[name]
+        this._saveManifest()
+        return Object.keys(this._manifest.intents)
+    }
+
+    deleteTool(name) {
+        if (!this._ready) throw new Error("No agent loaded")
+        if (!this._manifest.tools[name]) throw new Error(`Tool '${name}' not found`)
+        delete this._manifest.tools[name]
+        this._saveManifest()
+        return Object.keys(this._manifest.tools)
+    }
+
+    _saveManifest() {
+        fs.writeFileSync(this._manifestPath, yaml.dump(this._manifest, { lineWidth: -1 }), "utf8")
     }
 }
 
