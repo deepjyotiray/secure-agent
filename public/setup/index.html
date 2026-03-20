@@ -331,6 +331,22 @@
             <p>Run admin tasks, inspect governance, and approve gated actions here. WhatsApp remains a separate transport layer.</p>
           </div>
 
+          <div class="admin-card wa-debug-card">
+            <div class="subhead">
+              <h3>WhatsApp Debug Interceptor</h3>
+              <div class="wa-debug-controls">
+                <label class="toggle compact">
+                  <span>Intercept</span>
+                  <input id="wa-debug-toggle" type="checkbox">
+                </label>
+                <button id="wa-debug-refresh" class="ghost small" type="button">Refresh</button>
+              </div>
+            </div>
+            <p class="field-help">When enabled, incoming WhatsApp messages are held here for inspection before the agent responds. Messages auto-execute after 10 minutes if not acted on.</p>
+            <div id="wa-debug-status" class="status">Loading…</div>
+            <div id="wa-debug-list" class="wa-debug-list"></div>
+          </div>
+
           <div class="admin-grid">
             <div class="admin-card">
               <h3>Admin Task Runner</h3>
@@ -396,8 +412,20 @@
               <input id="chat-phone" value="+919999999999">
               <small class="field-help">Use any test number. Reuse the same number to preserve session memory across messages.</small>
             </label>
+            <label class="toggle">
+              <span>Pipeline Inspector mode</span>
+              <input id="preview-mode-toggle" type="checkbox">
+            </label>
+            <div class="toggle-help">When on, messages go through Preview → Approve → Execute instead of direct execution.</div>
           </div>
           <div id="chat-log" class="chat-log"></div>
+          <div id="pipeline-inspector" class="pipeline-inspector hidden">
+            <div class="pi-header">
+              <strong>Pipeline Inspector</strong>
+              <button id="pi-close" class="ghost small" type="button">✕</button>
+            </div>
+            <div id="pi-body" class="pi-body"></div>
+          </div>
           <form id="chat-form" class="chat-compose">
             <input id="chat-input" placeholder="Ask like a customer: What should I eat in this rain?">
             <button class="primary" type="submit">Send</button>

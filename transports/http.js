@@ -24,6 +24,8 @@ const { listWorkers } = require("../gateway/adminWorkers")
 const { loadNotes, saveNotes, generateNotes } = require("../core/dataModelNotes")
 const { getPromptGuides, getPromptGuide, addCustomGuide, removeCustomGuide } = require("../core/promptGuides")
 const { getActiveWorkspace, listWorkspaceIds } = require("../core/workspace")
+const { buildPreview, approveAndExecute, reject: rejectPreview, listPending } = require("../runtime/previewEngine")
+const debugInterceptor = require("../runtime/debugInterceptor")
 
 const PORT   = settings.transports?.http?.port || 3010
 const SECRET = settings.api.secret
@@ -137,7 +139,7 @@ const server = http.createServer(async (req, res) => {
     const url = requestUrl(req)
     const pathname = url.pathname
     const setupHost = host === SETUP_HOST
-    const loginAsset = req.method === "GET" && (pathname === "/" || pathname === "/login" || pathname.startsWith("/setup/assets/"))
+    const loginAsset = req.method === "GET" && (pathname === "/" || pathname === "/login" || pathname === "/intercept" || pathname.startsWith("/setup/assets/"))
     const loginApi = req.method === "POST" && pathname === "/setup/login"
 
     if (pathname.startsWith("/setup") || setupHost) {
@@ -155,6 +157,12 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && pathname === "/login" && setupHost) {
         serveFile(res, path.join(PUBLIC_DIR, "setup", "login.html"))
+        return
+    }
+
+    if (req.method === "GET" && (pathname === "/intercept" || pathname === "/setup/intercept")) {
+        if (!isSetupAuthorized(req)) { serveFile(res, path.join(PUBLIC_DIR, "setup", "login.html")); return }
+        serveFile(res, path.join(PUBLIC_DIR, "setup", "intercept.html"))
         return
     }
 
@@ -583,6 +591,98 @@ const server = http.createServer(async (req, res) => {
             return
         }
         sendJson(res, 200, { approvals: listApprovals() })
+        return
+    }
+
+    // ── WhatsApp Debug Interceptor ───────────────────────────────────────────
+
+    if (req.method === "GET" && pathname === "/setup/debug/status") {
+        sendJson(res, 200, { enabled: debugInterceptor.isEnabled(), held: debugInterceptor.listHeld() })
+        return
+    }
+
+    if (req.method === "POST" && pathname === "/setup/debug/toggle") {
+        try {
+            const { enabled } = await readBody(req)
+            const result = debugInterceptor.setEnabled(enabled)
+            sendJson(res, 200, { ok: true, enabled: result })
+        } catch (err) {
+            sendJson(res, 500, { error: err.message })
+        }
+        return
+    }
+
+    if (req.method === "POST" && pathname === "/setup/debug/approve") {
+        try {
+            const { requestId } = await readBody(req)
+            if (!requestId) { sendJson(res, 400, { error: "requestId required" }); return }
+            const result = await debugInterceptor.approve(requestId)
+            if (result.error) { sendJson(res, 404, result); return }
+            sendJson(res, 200, { ok: true, ...result })
+        } catch (err) {
+            logger.error({ err }, "debug approve failed")
+            sendJson(res, 500, { error: err.message })
+        }
+        return
+    }
+
+    if (req.method === "POST" && pathname === "/setup/debug/reject") {
+        try {
+            const { requestId, reply } = await readBody(req)
+            if (!requestId) { sendJson(res, 400, { error: "requestId required" }); return }
+            const result = debugInterceptor.reject(requestId, reply)
+            if (!result) { sendJson(res, 404, { error: "not_found" }); return }
+            sendJson(res, 200, { ok: true, ...result })
+        } catch (err) {
+            sendJson(res, 500, { error: err.message })
+        }
+        return
+    }
+
+    // ── Preview → Approve → Execute ──────────────────────────────────────────
+
+    if (req.method === "POST" && pathname === "/setup/preview") {
+        try {
+            const { phone, message, workspaceId } = await readBody(req)
+            if (!phone || !message) { sendJson(res, 400, { error: "phone and message required" }); return }
+            const preview = await buildPreview(message, phone, workspaceId || getActiveWorkspace())
+            sendJson(res, 200, { ok: true, preview })
+        } catch (err) {
+            logger.error({ err }, "setup preview failed")
+            sendJson(res, 500, { error: err.message })
+        }
+        return
+    }
+
+    if (req.method === "POST" && pathname === "/setup/preview/approve") {
+        try {
+            const { requestId } = await readBody(req)
+            if (!requestId) { sendJson(res, 400, { error: "requestId required" }); return }
+            const result = await approveAndExecute(requestId)
+            if (result.error) { sendJson(res, 404, result); return }
+            sendJson(res, 200, { ok: true, ...result })
+        } catch (err) {
+            logger.error({ err }, "setup preview approve failed")
+            sendJson(res, 500, { error: err.message })
+        }
+        return
+    }
+
+    if (req.method === "POST" && pathname === "/setup/preview/reject") {
+        try {
+            const { requestId } = await readBody(req)
+            if (!requestId) { sendJson(res, 400, { error: "requestId required" }); return }
+            const result = rejectPreview(requestId)
+            if (!result) { sendJson(res, 404, { error: "preview_not_found" }); return }
+            sendJson(res, 200, { ok: true, ...result })
+        } catch (err) {
+            sendJson(res, 500, { error: err.message })
+        }
+        return
+    }
+
+    if (req.method === "GET" && pathname === "/setup/preview/pending") {
+        sendJson(res, 200, { ok: true, pending: listPending() })
         return
     }
 

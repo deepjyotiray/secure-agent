@@ -137,6 +137,181 @@ function appendChatMessage(role, text) {
   log.scrollTop = log.scrollHeight
 }
 
+function esc(str) {
+  const d = document.createElement("div")
+  d.textContent = str
+  return d.innerHTML
+}
+
+function badgeClass(ok) { return ok ? "pass" : "fail" }
+function badgeText(ok) { return ok ? "PASS" : "FAIL" }
+
+function renderPipelineInspector(preview) {
+  const panel = document.getElementById("pipeline-inspector")
+  const body = document.getElementById("pi-body")
+  panel.classList.remove("hidden")
+
+  const p = preview
+  let html = ""
+
+  // Stage 1: Input
+  html += `<div class="pi-stage">
+    <div class="pi-stage-head">
+      <span class="pi-badge info">1</span>
+      <span class="pi-stage-label">Input</span>
+    </div>
+    <div class="pi-detail">
+      <dl class="pi-kv">
+        <dt>Raw</dt><dd><code>${esc(p.input.raw)}</code></dd>
+        <dt>Sanitized</dt><dd><code>${p.input.sanitized ? esc(p.input.sanitized) : "—"}</code></dd>
+      </dl>
+    </div>
+  </div>`
+
+  // Stage 2: Sanitizer
+  html += `<div class="pi-stage">
+    <div class="pi-stage-head">
+      <span class="pi-badge ${badgeClass(p.sanitizer.safe)}">2</span>
+      <span class="pi-stage-label">Sanitizer</span>
+      <span class="pi-badge ${badgeClass(p.sanitizer.safe)}">${p.sanitizer.safe ? "SAFE" : "BLOCKED"}</span>
+    </div>
+    <div class="pi-detail">
+      ${p.sanitizer.safe ? "Message passed all security checks." : `Blocked: <code>${esc(p.sanitizer.reason)}</code>`}
+    </div>
+  </div>`
+
+  if (p.status === "blocked" && !p.routing) {
+    html += renderActions(p)
+    body.innerHTML = html
+    return
+  }
+
+  // Stage 3: Session
+  if (p.session) {
+    const active = p.session.active
+    html += `<div class="pi-stage">
+      <div class="pi-stage-head">
+        <span class="pi-badge ${active ? "warn" : "info"}">3</span>
+        <span class="pi-stage-label">Session</span>
+        <span class="pi-badge ${active ? "warn" : "info"}">${active ? "ACTIVE" : "NONE"}</span>
+      </div>
+      <div class="pi-detail">
+        ${active ? `Active ${esc(p.session.type)} session. ${esc(p.session.override)}` : "No active cart or support session."}
+      </div>
+    </div>`
+  }
+
+  // Stage 4: Routing / Intent
+  if (p.routing) {
+    html += `<div class="pi-stage">
+      <div class="pi-stage-head">
+        <span class="pi-badge info">4</span>
+        <span class="pi-stage-label">Intent Classification</span>
+      </div>
+      <div class="pi-detail">
+        <dl class="pi-kv">
+          <dt>Intent</dt><dd><code>${esc(p.routing.intent)}</code></dd>
+          <dt>Confidence</dt><dd>${(p.routing.confidence * 100).toFixed(0)}%</dd>
+          <dt>Heuristic</dt><dd><code>${p.routing.heuristicMatch || "—"}</code></dd>
+          <dt>Guard</dt><dd>${p.routing.guardApplied ? `<span class="pi-badge warn">FALLBACK</span> from <code>${esc(p.routing.originalIntent)}</code>` : "No fallback needed"}</dd>
+        </dl>
+        ${Object.keys(p.routing.filter || {}).length ? `<dl class="pi-kv" style="margin-top:8px"><dt>Filter</dt><dd><code>${esc(JSON.stringify(p.routing.filter))}</code></dd></dl>` : ""}
+      </div>
+    </div>`
+  }
+
+  // Stage 5: Policy
+  if (p.policy) {
+    html += `<div class="pi-stage">
+      <div class="pi-stage-head">
+        <span class="pi-badge ${badgeClass(p.policy.allowed)}">5</span>
+        <span class="pi-stage-label">Policy Engine</span>
+        <span class="pi-badge ${badgeClass(p.policy.allowed)}">${p.policy.allowed ? "ALLOWED" : "DENIED"}</span>
+      </div>
+      <div class="pi-detail">
+        <ul class="pi-checks">
+          ${(p.policy.checks || []).map(c => `<li>${c.result ? "✅" : "❌"} <code>${esc(c.rule)}</code>${c.detail ? " — " + esc(c.detail) : ""}</li>`).join("")}
+        </ul>
+      </div>
+    </div>`
+  }
+
+  // Stage 6: Execution Plan
+  if (p.plan && p.plan.length) {
+    html += `<div class="pi-stage">
+      <div class="pi-stage-head">
+        <span class="pi-badge info">6</span>
+        <span class="pi-stage-label">Execution Plan</span>
+      </div>
+      <div class="pi-detail">
+        ${p.plan.map(s => `<div class="pi-plan-step">
+          <dl class="pi-kv">
+            <dt>Step ${s.step}</dt><dd><code>${esc(s.tool)}</code> (type: <code>${esc(s.type)}</code>)</dd>
+            <dt>Risk</dt><dd><span class="pi-badge ${s.risk === "low" ? "pass" : s.risk === "medium" ? "warn" : "fail"}">${s.risk.toUpperCase()}</span></dd>
+            <dt>Reason</dt><dd>${esc(s.reason)}</dd>
+            <dt>Handler</dt><dd>${s.executable ? "✅ Resolved" : "❌ Missing"}</dd>
+          </dl>
+        </div>`).join("")}
+      </div>
+    </div>`
+  }
+
+  html += renderActions(p)
+  body.innerHTML = html
+  bindPipelineActions(p.requestId)
+}
+
+function renderActions(preview) {
+  const s = preview.status
+  if (s === "awaiting_approval") {
+    return `<div class="pi-actions">
+      <button class="primary small" id="pi-approve" data-id="${preview.requestId}">✓ Approve & Execute</button>
+      <button class="ghost small" id="pi-reject" data-id="${preview.requestId}">✗ Reject</button>
+      <span class="pi-status-tag awaiting">Awaiting Approval</span>
+    </div>`
+  }
+  const cls = s === "blocked" || s === "policy_blocked" ? "blocked" : s === "no_handler" ? "blocked" : "info"
+  return `<div class="pi-actions">
+    <span class="pi-status-tag ${cls}">${s.replace(/_/g, " ").toUpperCase()}</span>
+  </div>`
+}
+
+function bindPipelineActions(requestId) {
+  const approveBtn = document.getElementById("pi-approve")
+  const rejectBtn = document.getElementById("pi-reject")
+
+  if (approveBtn) {
+    approveBtn.addEventListener("click", async () => {
+      approveBtn.disabled = true
+      approveBtn.textContent = "Executing…"
+      try {
+        const data = await api("/setup/preview/approve", "POST", { requestId })
+        appendChatMessage("agent", data.response || "Executed (no response)")
+        const actions = approveBtn.closest(".pi-actions")
+        actions.innerHTML = '<span class="pi-status-tag executed">EXECUTED</span>'
+      } catch (err) {
+        approveBtn.disabled = false
+        approveBtn.textContent = "✓ Approve & Execute"
+        appendChatMessage("agent", `Execution error: ${err.message}`)
+      }
+    })
+  }
+
+  if (rejectBtn) {
+    rejectBtn.addEventListener("click", async () => {
+      rejectBtn.disabled = true
+      try {
+        await api("/setup/preview/reject", "POST", { requestId })
+        appendChatMessage("agent", "[Message rejected — not executed]")
+        const actions = rejectBtn.closest(".pi-actions")
+        actions.innerHTML = '<span class="pi-status-tag rejected">REJECTED</span>'
+      } catch (err) {
+        rejectBtn.disabled = false
+      }
+    })
+  }
+}
+
 function renderGovernance(data) {
   const roleDescription = data.rolePolicy?.description ? `\n${data.rolePolicy.description}` : ""
   const maxRisk = data.rolePolicy?.maxRisk ? `\nMax risk: ${data.rolePolicy.maxRisk}` : ""
@@ -214,6 +389,68 @@ async function loadApprovals() {
   renderApprovals(data.approvals || [])
 }
 
+async function loadDebugStatus() {
+  try {
+    const data = await api("/setup/debug/status")
+    document.getElementById("wa-debug-toggle").checked = data.enabled
+    setText("wa-debug-status", data.enabled
+      ? `Interceptor ON — ${data.held.length} message${data.held.length !== 1 ? "s" : ""} held`
+      : "Interceptor OFF — WhatsApp messages execute normally")
+    renderHeldMessages(data.held || [])
+  } catch {
+    setText("wa-debug-status", "Could not load debug status")
+  }
+}
+
+function renderHeldMessages(held) {
+  const list = document.getElementById("wa-debug-list")
+  list.innerHTML = ""
+  if (!held.length) return
+
+  for (const h of held) {
+    const p = h.preview
+    const card = document.createElement("article")
+    card.className = "wa-held-card"
+
+    const intentLabel = p.routing ? p.routing.intent : (p.status === "blocked" ? "BLOCKED" : "unknown")
+    const confidence = p.routing ? `${(p.routing.confidence * 100).toFixed(0)}%` : "—"
+    const policyOk = p.policy ? p.policy.allowed : false
+    const risk = p.plan?.[0]?.risk || "—"
+    const tool = p.plan?.[0]?.tool || "—"
+
+    card.innerHTML = `
+      <div class="wa-held-head">
+        <strong>${esc(h.phone.replace(/@.*$/, ""))}</strong>
+        <span class="wa-held-age">${esc(h.age)} ago • ${esc(p.requestId)}</span>
+      </div>
+      <div class="wa-held-message">${esc(h.message)}</div>
+      <details class="wa-held-pipeline">
+        <summary>Pipeline trace — intent: ${esc(intentLabel)} • confidence: ${confidence} • policy: ${policyOk ? "✅" : "❌"} • tool: ${esc(tool)} • risk: ${esc(risk)}</summary>
+        <div class="pi-stage">
+          <div class="pi-detail">
+            <dl class="pi-kv">
+              <dt>Raw</dt><dd><code>${esc(p.input.raw)}</code></dd>
+              <dt>Sanitized</dt><dd><code>${p.input.sanitized || "—"}</code></dd>
+              ${p.routing ? `<dt>Intent</dt><dd><code>${esc(p.routing.intent)}</code></dd>
+              <dt>Heuristic</dt><dd><code>${p.routing.heuristicMatch || "—"}</code></dd>
+              <dt>Filter</dt><dd><code>${esc(JSON.stringify(p.routing.filter || {}))}</code></dd>` : ""}
+              ${p.policy ? `<dt>Policy</dt><dd>${p.policy.allowed ? "✅ Allowed" : "❌ Denied"}</dd>` : ""}
+              ${p.plan?.[0] ? `<dt>Tool</dt><dd><code>${esc(p.plan[0].tool)}</code> (${esc(p.plan[0].type)})</dd>
+              <dt>Risk</dt><dd><span class="pi-badge ${p.plan[0].risk === "low" ? "pass" : p.plan[0].risk === "medium" ? "warn" : "fail"}">${p.plan[0].risk.toUpperCase()}</span></dd>` : ""}
+            </dl>
+          </div>
+        </div>
+      </details>
+      <div class="wa-held-actions">
+        <button class="primary small wa-approve-btn" data-id="${p.requestId}">✓ Approve & Send</button>
+        <button class="ghost small wa-reject-btn" data-id="${p.requestId}">✗ Reject</button>
+        <span class="pi-status-tag awaiting">Held</span>
+      </div>
+    `
+    list.appendChild(card)
+  }
+}
+
 async function load() {
   const form = document.getElementById("profile-form")
   const data = await api(withWorkspace("/setup/profile"))
@@ -224,6 +461,7 @@ async function load() {
   setStatus("Profile loaded. Update the fields, save, then generate your draft agent pack.")
   await loadGovernance()
   await loadApprovals()
+  await loadDebugStatus()
   const log = document.getElementById("chat-log")
   log.innerHTML = ""
   appendChatMessage("agent", "Customer chat sandbox ready. Try a real customer-style question here.")
@@ -265,6 +503,52 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   document.getElementById("refresh-approvals-btn").addEventListener("click", async () => {
     await loadApprovals()
+  })
+
+  document.getElementById("wa-debug-toggle").addEventListener("change", async (e) => {
+    try {
+      const data = await api("/setup/debug/toggle", "POST", { enabled: e.target.checked })
+      await loadDebugStatus()
+    } catch (err) {
+      e.target.checked = !e.target.checked
+      setText("wa-debug-status", `Toggle failed: ${err.message}`)
+    }
+  })
+
+  document.getElementById("wa-debug-refresh").addEventListener("click", async () => {
+    await loadDebugStatus()
+  })
+
+  document.getElementById("wa-debug-list").addEventListener("click", async (event) => {
+    const approveBtn = event.target.closest(".wa-approve-btn")
+    const rejectBtn = event.target.closest(".wa-reject-btn")
+
+    if (approveBtn) {
+      const id = approveBtn.dataset.id
+      approveBtn.disabled = true
+      approveBtn.textContent = "Executing\u2026"
+      try {
+        const data = await api("/setup/debug/approve", "POST", { requestId: id })
+        const actions = approveBtn.closest(".wa-held-actions")
+        actions.innerHTML = `<span class="pi-status-tag executed">SENT \u2014 ${esc(data.response?.slice(0, 80) || "executed")}</span>`
+      } catch (err) {
+        approveBtn.disabled = false
+        approveBtn.textContent = "\u2713 Approve & Send"
+        setText("wa-debug-status", `Approve failed: ${err.message}`)
+      }
+    }
+
+    if (rejectBtn) {
+      const id = rejectBtn.dataset.id
+      rejectBtn.disabled = true
+      try {
+        await api("/setup/debug/reject", "POST", { requestId: id })
+        const actions = rejectBtn.closest(".wa-held-actions")
+        actions.innerHTML = '<span class="pi-status-tag rejected">REJECTED</span>'
+      } catch (err) {
+        rejectBtn.disabled = false
+      }
+    }
   })
 
   document.getElementById("save-btn").addEventListener("click", async () => {
@@ -326,12 +610,28 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (!phone || !message) return
     appendChatMessage("user", message)
     input.value = ""
-    try {
-      const data = await api("/setup/chat", "POST", { phone, message, workspaceId: activeWorkspace })
-      appendChatMessage("agent", data.response || "No response")
-    } catch (err) {
-      appendChatMessage("agent", `Error: ${err.message}`)
+
+    const previewMode = document.getElementById("preview-mode-toggle").checked
+
+    if (previewMode) {
+      try {
+        const data = await api("/setup/preview", "POST", { phone, message, workspaceId: activeWorkspace })
+        renderPipelineInspector(data.preview)
+      } catch (err) {
+        appendChatMessage("agent", `Preview error: ${err.message}`)
+      }
+    } else {
+      try {
+        const data = await api("/setup/chat", "POST", { phone, message, workspaceId: activeWorkspace })
+        appendChatMessage("agent", data.response || "No response")
+      } catch (err) {
+        appendChatMessage("agent", `Error: ${err.message}`)
+      }
     }
+  })
+
+  document.getElementById("pi-close").addEventListener("click", () => {
+    document.getElementById("pipeline-inspector").classList.add("hidden")
   })
 
   document.getElementById("approvals-list").addEventListener("click", async event => {

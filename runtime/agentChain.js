@@ -12,6 +12,8 @@ const cartStore                          = require("../tools/cartStore")
 const executor                           = require("./executor")
 const logger                             = require("../gateway/logger")
 const { addTurn }                        = require("./sessionMemory")
+const { getActiveWorkspace }             = require("../core/workspace")
+const { loadPack, getPackForWorkspace }  = require("../core/domainPacks")
 
 function isSupportMenuReply(message) {
     const text = String(message || "").trim()
@@ -51,7 +53,8 @@ class AgentChain {
         }
 
         if (activeCart) {
-            return await executor.execute(this._manifest, { intent: "place_order", filter: {} }, { phone, rawMessage: message })
+            const cartIntent = this._sessionRouting.activeCartIntent || "place_order"
+            return await executor.execute(this._manifest, { intent: cartIntent, filter: {} }, { phone, rawMessage: message })
         }
 
         if (activeSupport) {
@@ -138,8 +141,47 @@ class AgentChain {
         if (!this._manifest.agent?.name) throw new Error("Manifest missing agent.name")
         if (!this._manifest.intents)     throw new Error("Manifest missing intents")
         if (!this._manifest.tools)       throw new Error("Manifest missing tools")
+
+        // wire domain pack if workspace has one configured
+        this._sessionRouting = {}
+        this._domainPack = null
+        try {
+            this._domainPack = this._loadDomainPack()
+        } catch (err) {
+            logger.warn({ err: err.message }, "chain: domain pack load failed, continuing without")
+        }
+
         this._ready = true
-        logger.info({ agent: this._manifest.agent.name }, "chain: loaded")
+        logger.info({ agent: this._manifest.agent.name, domainPack: this._domainPack?.name || null }, "chain: loaded")
+    }
+
+    _loadDomainPack() {
+        // try to resolve workspace profile → domainPack field
+        let profile
+        try {
+            const { loadProfile } = require("../setup/profileService")
+            const workspaceId = getActiveWorkspace()
+            profile = loadProfile(workspaceId)
+        } catch { return null }
+
+        const pack = getPackForWorkspace(profile)
+        if (!pack) return null
+
+        // register domain pack tool types with executor
+        for (const [name, handler] of Object.entries(pack.toolTypes || {})) {
+            executor.registerToolType(name, handler)
+        }
+
+        // attach domain pack config to manifest for customerRouter/intentParser
+        if (pack.heuristics)      this._manifest._domainPackHeuristics     = pack.heuristics
+        if (pack.filterSchema)    this._manifest._domainPackFilterSchema   = pack.filterSchema
+        if (pack.filterExamples)  this._manifest._domainPackFilterExamples = pack.filterExamples
+
+        // session routing
+        this._sessionRouting = pack.sessionRouting || {}
+
+        logger.info({ pack: pack.name, toolTypes: Object.keys(pack.toolTypes || {}) }, "chain: domain pack wired")
+        return pack
     }
 
     getIntents() {

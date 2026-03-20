@@ -11,6 +11,7 @@ const { getActiveWorkspace } = require("../core/workspace")
 const { loadProfile } = require("../setup/profileService")
 const { loadNotes } = require("../core/dataModelNotes")
 const { registerGuide } = require("../core/promptGuides")
+const { getPackForWorkspace } = require("../core/domainPacks")
 const logger = require("./logger")
 
 const DB_PATH = settings.admin.db_path
@@ -68,94 +69,40 @@ function runShell(cmd) {
 
 // ── DB context builder ────────────────────────────────────────────────────────
 
-function buildDbContext(workspaceId) {
-    const dbPath = loadProfile(workspaceId).dbPath || DB_PATH
+function genericDbContext(dbPath) {
     const db = new Database(dbPath, { readonly: true })
     try {
-        const now = new Date()
-        const thisMonth = now.toISOString().slice(0, 7)   // YYYY-MM
-        const thisYear  = now.toISOString().slice(0, 4)   // YYYY
-        const today     = now.toISOString().slice(0, 10)  // YYYY-MM-DD
+        const tables = db.prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).all().map(t => t.name)
+        const lines = [`=== DATABASE SUMMARY ===`, `Date: ${new Date().toDateString()}`, `Tables: ${tables.join(", ")}`, ""]
+        for (const t of tables) {
+            const count = db.prepare(`SELECT COUNT(*) as c FROM "${t}"`).get().c
+            const sample = db.prepare(`SELECT * FROM "${t}" ORDER BY rowid DESC LIMIT 3`).all()
+            lines.push(`TABLE ${t} (${count} rows):`)
+            if (sample.length) lines.push(JSON.stringify(sample, null, 2))
+            lines.push("")
+        }
+        return lines.join("\n")
+    } finally { db.close() }
+}
 
-        const todayOrders = db.prepare(`
-            SELECT id, customer_name, phone, total, delivery_status, payment_status, order_for, expected_delivery
-            FROM orders WHERE order_for = ?
-            ORDER BY created_at DESC
-        `).all(today)
+function buildDbContext(workspaceId) {
+    const profile = loadProfile(workspaceId)
+    const dbPath = profile.dbPath || DB_PATH
 
-        const todayRevenue = todayOrders.filter(o => o.payment_status === "Paid").reduce((s, o) => s + o.total, 0)
-
-        const monthRevenue = db.prepare(`
-            SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as cnt
-            FROM orders WHERE payment_status='Paid' AND order_date LIKE ?
-        `).get(`${thisMonth}%`)
-
-        const monthExpenses = db.prepare(`
-            SELECT COALESCE(SUM(expense),0) as exp, COALESCE(SUM(income),0) as inc
-            FROM expenses WHERE entry_date LIKE ? OR entry_date LIKE ?
-        `).get(`${thisMonth}%`, `%/${now.getMonth()+1 < 10 ? '0'+(now.getMonth()+1) : now.getMonth()+1}/${thisYear}`)
-
-        const yearRevenue = db.prepare(`
-            SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as cnt
-            FROM orders WHERE payment_status='Paid' AND order_date LIKE ?
-        `).get(`${thisYear}%`)
-
-        const yearExpenses = db.prepare(`
-            SELECT COALESCE(SUM(expense),0) as exp, COALESCE(SUM(income),0) as inc
-            FROM expenses WHERE entry_date LIKE ? OR entry_date LIKE ?
-        `).get(`${thisYear}%`, `%/${thisYear}`)
-
-        const activeOrders = db.prepare(`
-            SELECT id, customer_name, phone, total, delivery_status, payment_status, order_for, expected_delivery
-            FROM orders WHERE delivery_status NOT IN ('Delivered','Cancelled')
-            ORDER BY created_at DESC LIMIT 20
-        `).all()
-
-        const recentOrders = db.prepare(`
-            SELECT id, customer_name, phone, total, delivery_status, payment_status, order_for
-            FROM orders ORDER BY created_at DESC LIMIT 10
-        `).all()
-
-        const unpaidOrders = db.prepare(`
-            SELECT id, customer_name, phone, total, order_for
-            FROM orders WHERE payment_status != 'Paid' AND delivery_status NOT IN ('Delivered','Cancelled')
-            ORDER BY created_at DESC
-        `).all()
-
-        return `
-=== BUSINESS SUMMARY ===
-Date: ${now.toDateString()} (${today})
-
-Today (${today}):
-- Orders: ${todayOrders.length}
-- Paid revenue: ₹${todayRevenue}
-- Orders detail:
-${todayOrders.map(o => `  • ${o.id} | ${o.customer_name} | ₹${o.total} | Delivery: ${o.delivery_status} | Payment: ${o.payment_status}`).join("\n") || "  None"}
-
-This Month (${thisMonth}):
-- Revenue from orders: ₹${monthRevenue.rev} (${monthRevenue.cnt} paid orders)
-- Expenses: ₹${monthExpenses.exp}
-- Other income: ₹${monthExpenses.inc}
-- Net profit: ₹${monthRevenue.rev + monthExpenses.inc - monthExpenses.exp}
-
-This Year (${thisYear}):
-- Revenue from orders: ₹${yearRevenue.rev} (${yearRevenue.cnt} paid orders)
-- Expenses: ₹${yearExpenses.exp}
-- Other income: ₹${yearExpenses.inc}
-- Net profit: ₹${yearRevenue.rev + yearExpenses.inc - yearExpenses.exp}
-
-Active Orders (${activeOrders.length}):
-${activeOrders.map(o => `- ${o.id} | ${o.customer_name} | ${o.phone} | ₹${o.total} | Delivery: ${o.delivery_status} | Payment: ${o.payment_status} | For: ${o.order_for} by ${o.expected_delivery}`).join("\n") || "None"}
-
-Unpaid Active Orders (${unpaidOrders.length}):
-${unpaidOrders.map(o => `- ${o.id} | ${o.customer_name} | ${o.phone} | ₹${o.total} | For: ${o.order_for}`).join("\n") || "None"}
-
-Recent Orders (last 10):
-${recentOrders.map(o => `- ${o.id} | ${o.customer_name} | ₹${o.total} | ${o.delivery_status} | ${o.payment_status}`).join("\n")}
-`.trim()
-    } finally {
-        db.close()
+    // try domain pack's context builder first
+    try {
+        const pack = getPackForWorkspace(profile)
+        if (pack?.buildAdminContext) {
+            return pack.buildAdminContext(dbPath)
+        }
+    } catch (err) {
+        logger.warn({ err: err.message }, "admin: domain pack buildAdminContext failed, using generic")
     }
+
+    // generic fallback — schema introspection
+    return genericDbContext(dbPath)
 }
 
 // ── LLM-driven dynamic SQL query ──────────────────────────────────────────────
@@ -304,7 +251,13 @@ async function handleAdminImage(imageBase64, caption, options = {}) {
     const apiKey = cfg.api_key
     const model  = cfg.model || "gpt-4o-mini"
     const apiUrl = cfg.url || "https://api.openai.com/v1/chat/completions"
-    const dbPath = loadProfile(workspaceId).dbPath || DB_PATH
+    const profile = loadProfile(workspaceId)
+    const dbPath = profile.dbPath || DB_PATH
+
+    // resolve domain pack for vision prompt and insertion
+    let pack = null
+    try { pack = getPackForWorkspace(profile) } catch {}
+    const visionText = pack?.visionPrompt || 'Extract all structured entries from this image. Return ONLY a JSON array, no explanation. Each item should have relevant fields as key-value pairs.'
 
     // Step 1: vision LLM extracts entries as JSON
     const res = await fetch(apiUrl, {
@@ -315,7 +268,7 @@ async function handleAdminImage(imageBase64, caption, options = {}) {
             messages: [{
                 role: "user",
                 content: [
-                    { type: "text", text: "Extract all expense and income entries from this image. Return ONLY a JSON array, no explanation. Each item: {\"heading\": string, \"expense\": number, \"income\": number, \"date\": \"DD/MM/YYYY or empty\", \"notes\": string}. Use 0 for the field that does not apply. Do not invent data not visible in the image." },
+                    { type: "text", text: visionText },
                     { type: "image_url", image_url: { url: `data:image/jpeg;base64,${imageBase64}` } }
                 ]
             }],
@@ -331,21 +284,20 @@ async function handleAdminImage(imageBase64, caption, options = {}) {
 
     let entries
     try { entries = JSON.parse(match[0]) } catch { return `❌ JSON parse failed: ${match[0].slice(0, 200)}` }
-    if (!entries.length) return "No expense entries found in image."
+    if (!entries.length) return "No entries found in image."
 
-    // Step 2: insert directly into DB
-    const today = (() => { const d = new Date(); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}` })()
-    const db   = new Database(dbPath)
-    const stmt = db.prepare("INSERT INTO expenses (entry_date, expense, income, heading, notes) VALUES (?, ?, ?, ?, ?)")
-    const inserted = []
-    try {
-        for (const e of entries) {
-            stmt.run(e.date || today, Number(e.expense) || 0, Number(e.income) || 0, e.heading || "Expense", e.notes || "")
-            inserted.push(`• ${e.heading} — ₹${e.expense || e.income} (${e.date || today})`)
+    // Step 2: delegate insertion to domain pack if available
+    if (pack?.insertVisionEntries) {
+        try {
+            const inserted = pack.insertVisionEntries(entries, dbPath)
+            return `✅ Added ${inserted.length} entr${inserted.length === 1 ? "y" : "ies"}:\n${inserted.join("\n")}`
+        } catch (err) {
+            return `❌ Insert failed: ${err.message}`
         }
-    } finally { db.close() }
+    }
 
-    return `✅ Added ${inserted.length} entr${inserted.length === 1 ? "y" : "ies"}:\n${inserted.join("\n")}`
+    // generic fallback — return parsed entries as text
+    return `📋 Parsed ${entries.length} entries from image:\n${JSON.stringify(entries, null, 2).slice(0, 2000)}`
 }
 
 registerGuide({

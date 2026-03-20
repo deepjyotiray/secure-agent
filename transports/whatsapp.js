@@ -9,6 +9,7 @@ const settings = require("../config/settings.json")
 const qrcode   = require("qrcode-terminal")
 const agentChain = require("../runtime/agentChain")
 const { setSock, setConnected } = require("../transport/api")
+const debugInterceptor = require("../runtime/debugInterceptor")
 const logger   = require("../gateway/logger")
 
 function resolveJid(jid) {
@@ -99,6 +100,10 @@ async function start() {
         if (!text) return
 
         logger.info({ phone, rawJid, text }, "inbound message")
+
+        // debug interceptor — hold message if enabled
+        const held = await debugInterceptor.intercept(text, phone, rawJid, sock)
+        if (held) return // message is held for UI approval
 
         const response = await agentChain.execute(text, phone)
         if (response) await sock.sendMessage(rawJid, { text: response })

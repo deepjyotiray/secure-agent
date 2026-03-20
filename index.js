@@ -6,10 +6,11 @@ const { startApi } = require("./transport/api")
 const { start: startHttpConsole } = require("./transports/http")
 
 const agentFlag    = process.argv.indexOf("--agent")
-const manifestPath = agentFlag !== -1 ? process.argv[agentFlag + 1] : "agents/restaurant.yml"
+const manifestPath = agentFlag !== -1 ? process.argv[agentFlag + 1] : null
 
 if (!manifestPath) {
-    console.error("Usage: node index.js --agent agents/restaurant.yml")
+    console.error("Usage: node index.js --agent <path-to-manifest.yml>")
+    console.error("Example: node index.js --agent agents/restaurant.yml")
     process.exit(1)
 }
 

@@ -2,12 +2,31 @@
 
 const logger = require("../gateway/logger")
 
-const TOOL_REGISTRY = {
+// built-in tool types — always available, eagerly loaded
+const CORE_TOOLS = {
     business_chat: require("../tools/businessChatTool"),
     rag:          require("../tools/ragTool"),
     sqlite:       require("../tools/sqliteTool"),
     support:      require("../tools/supportTool"),
     order_create: require("../tools/orderCreateTool"),
+}
+
+// domain-pack tool types — registered at runtime
+const _dynamicTypes = new Map()
+
+function registerToolType(name, handler) {
+    if (!name || typeof handler?.execute !== "function") {
+        throw new Error(`registerToolType: "${name}" must export execute()`)
+    }
+    if (CORE_TOOLS[name]) {
+        logger.warn({ type: name }, "executor: dynamic type shadows core type")
+    }
+    _dynamicTypes.set(name, handler)
+    logger.info({ type: name }, "executor: registered dynamic tool type")
+}
+
+function resolveToolHandler(type) {
+    return _dynamicTypes.get(type) || CORE_TOOLS[type] || null
 }
 
 async function execute(manifest, intent, context) {
@@ -24,7 +43,7 @@ async function execute(manifest, intent, context) {
         return manifest.agent.error_message || "Something went wrong."
     }
 
-    const tool = TOOL_REGISTRY[toolConfig.type]
+    const tool = resolveToolHandler(toolConfig.type)
     if (!tool) {
         logger.warn({ type: toolConfig.type }, "executor: unknown tool type")
         return manifest.agent.error_message || "Something went wrong."
@@ -35,4 +54,4 @@ async function execute(manifest, intent, context) {
     return await tool.execute(intent.filter || {}, context, toolConfig)
 }
 
-module.exports = { execute }
+module.exports = { execute, registerToolType, resolveToolHandler }

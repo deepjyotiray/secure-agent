@@ -14,6 +14,7 @@ const { createApprovalRequest } = require("./adminApprovals")
 const { getActiveWorkspace } = require("../core/workspace")
 const { loadProfile } = require("../setup/profileService")
 const { loadNotes } = require("../core/dataModelNotes")
+const { getPackForWorkspace } = require("../core/domainPacks")
 const {
     createTaskState,
     appendToolCall,
@@ -38,7 +39,7 @@ function resolveWorkspaceDbPath(workspaceId) {
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
-const TOOL_DEFINITIONS = [
+const CORE_TOOL_DEFINITIONS = [
     {
         type: "function",
         function: {
@@ -70,45 +71,11 @@ const TOOL_DEFINITIONS = [
         type: "function",
         function: {
             name: "query_db",
-            description: "Run a read-only SQL SELECT query on the orders database.",
+            description: "Run a read-only SQL SELECT query on the database.",
             parameters: {
                 type: "object",
                 properties: { sql: { type: "string", description: "A SELECT SQL query" } },
                 required: ["sql"]
-            }
-        }
-    },
-    {
-        type: "function",
-        function: {
-            name: "add_expense",
-            description: "Add a manual expense or income entry to the expenses table. Use for recording daily expenses, purchases, or income.",
-            parameters: {
-                type: "object",
-                properties: {
-                    heading:    { type: "string", description: "Short label e.g. 'Vegetables', 'Gas', 'Salary'" },
-                    expense:    { type: "number", description: "Expense amount in rupees (0 if income entry)" },
-                    income:     { type: "number", description: "Income amount in rupees (0 if expense entry)" },
-                    notes:      { type: "string", description: "Optional extra details" },
-                    entry_date: { type: "string", description: "Date in DD/MM/YYYY format e.g. 27/02/2026. Defaults to today if omitted." }
-                },
-                required: ["heading"]
-            }
-        }
-    },
-    {
-        type: "function",
-        function: {
-            name: "update_order",
-            description: "Update delivery_status or payment_status of an order by order ID.",
-            parameters: {
-                type: "object",
-                properties: {
-                    order_id:        { type: "string", description: "The order ID" },
-                    delivery_status: { type: "string", description: "New delivery status e.g. Confirmed, Preparing, Out for Delivery, Delivered, Cancelled" },
-                    payment_status:  { type: "string", description: "New payment status e.g. Paid, Pending, Failed" }
-                },
-                required: ["order_id"]
             }
         }
     },
@@ -454,6 +421,16 @@ const TOOL_DEFINITIONS = [
     }
 ]
 
+function resolveToolDefinitions(workspaceId) {
+    let domainDefs = []
+    try {
+        const profile = loadProfile(workspaceId)
+        const pack = getPackForWorkspace(profile)
+        if (pack?.adminToolDefinitions?.length) domainDefs = pack.adminToolDefinitions
+    } catch {}
+    return [...CORE_TOOL_DEFINITIONS, ...domainDefs]
+}
+
 // ── Shell allowlist ───────────────────────────────────────────────────────────
 
 const SHELL_PATTERNS = [
@@ -546,41 +523,28 @@ function queryDb(sql, workspaceId) {
     }
 }
 
-function addExpense({ heading, expense = 0, income = 0, notes = "", entry_date }, workspaceId) {
-    const db = new Database(resolveWorkspaceDbPath(workspaceId))
+function addExpense(args, workspaceId) {
     try {
-        const date = entry_date || (() => {
-            const d = new Date()
-            return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
-        })()
-        const result = db.prepare(
-            "INSERT INTO expenses (entry_date, expense, income, heading, notes) VALUES (?, ?, ?, ?, ?)"
-        ).run(date, expense, income, heading, notes)
-        return `✅ Expense added (id:${result.lastInsertRowid}): ${heading} | expense:₹${expense} income:₹${income} | date:${date}`
-    } catch (err) {
-        return `❌ DB error: ${err.message}`
-    } finally {
-        db.close()
-    }
+        const profile = loadProfile(workspaceId)
+        const pack = getPackForWorkspace(profile)
+        if (pack?.dispatchAdminTool) {
+            const result = pack.dispatchAdminTool("add_expense", args, resolveWorkspaceDbPath(workspaceId))
+            if (result !== null) return result
+        }
+    } catch {}
+    return "❌ add_expense not available for this workspace."
 }
 
 function updateOrder(orderId, deliveryStatus, paymentStatus, workspaceId) {
-    const db = new Database(resolveWorkspaceDbPath(workspaceId))
     try {
-        const sets = [], vals = []
-        if (deliveryStatus) { sets.push("delivery_status = ?"); vals.push(deliveryStatus) }
-        if (paymentStatus)  { sets.push("payment_status = ?");  vals.push(paymentStatus) }
-        if (!sets.length) return "❌ Provide delivery_status or payment_status."
-        vals.push(orderId)
-        const result = db.prepare(`UPDATE orders SET ${sets.join(", ")} WHERE id = ?`).run(...vals)
-        return result.changes > 0
-            ? `✅ Order ${orderId} updated.${deliveryStatus ? ` Delivery: ${deliveryStatus}.` : ""}${paymentStatus ? ` Payment: ${paymentStatus}.` : ""}`
-            : `❌ Order ${orderId} not found.`
-    } catch (err) {
-        return `❌ DB error: ${err.message}`
-    } finally {
-        db.close()
-    }
+        const profile = loadProfile(workspaceId)
+        const pack = getPackForWorkspace(profile)
+        if (pack?.dispatchAdminTool) {
+            const result = pack.dispatchAdminTool("update_order", { order_id: orderId, delivery_status: deliveryStatus, payment_status: paymentStatus }, resolveWorkspaceDbPath(workspaceId))
+            if (result !== null) return result
+        }
+    } catch {}
+    return "❌ update_order not available for this workspace."
 }
 
 async function sendWhatsapp(phone, message) {
@@ -1070,7 +1034,7 @@ When you finish, give a concise admin summary with:
             res  = await fetch(apiUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-                body: JSON.stringify({ model, messages, tools: TOOL_DEFINITIONS })
+                body: JSON.stringify({ model, messages, tools: resolveToolDefinitions(workspaceId) })
             })
             data = await res.json()
             if (res.status === 429) {
@@ -1171,7 +1135,7 @@ registerGuide({
         const notesBlock = notes
             ? "DATA MODEL NOTES (auto-generated for this workspace):\n" + notes
             : "(no data model notes generated yet — call POST /setup/agent/notes/regenerate)"
-        const toolNames = TOOL_DEFINITIONS.map(t => t.function.name).join(", ")
+        const toolNames = CORE_TOOL_DEFINITIONS.map(t => t.function.name).join(", ")
         return `You are a powerful self-healing admin agent for ${biz}. Today is ${new Date().toDateString()}.\n\n...core behaviour, browser rules, self-healing (see source)...\n\nAVAILABLE TOOLS: ${toolNames}\n\n${notesBlock}`
     },
 })
