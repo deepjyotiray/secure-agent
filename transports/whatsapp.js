@@ -61,8 +61,24 @@ async function start() {
         const rawJid = msg.key.remoteJid
         const phone  = resolveJid(rawJid)
 
-        // Payment screenshot — forward to payment-watcher
+        // Image handling
         if (msg.message.imageMessage) {
+            const { isAdmin: senderIsAdmin, parseAdminMessage: _p, handleAdmin: _h, handleAdminImage } = require("../gateway/admin")
+            if (senderIsAdmin(phone)) {
+                logger.info({ phone }, "admin image — routing to admin image handler")
+                try {
+                    const stream  = await downloadMediaMessage(msg, "buffer", {})
+                    const b64     = stream.toString("base64")
+                    const caption = msg.message.imageMessage.caption || ""
+                    const reply   = await handleAdminImage(b64, caption)
+                    if (reply) await sock.sendMessage(rawJid, { text: reply })
+                } catch (err) {
+                    logger.error({ err }, "admin image handling failed")
+                    await sock.sendMessage(rawJid, { text: `❌ Image processing failed: ${err.message}` })
+                }
+                return
+            }
+            // Non-admin image — forward to payment-watcher
             logger.info({ phone }, "inbound image — forwarding to payment-watcher")
             try {
                 const stream  = await downloadMediaMessage(msg, "buffer", {})

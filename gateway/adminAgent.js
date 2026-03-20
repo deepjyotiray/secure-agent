@@ -79,6 +79,24 @@ const TOOL_DEFINITIONS = [
     {
         type: "function",
         function: {
+            name: "add_expense",
+            description: "Add a manual expense or income entry to the expenses table. Use for recording daily expenses, purchases, or income.",
+            parameters: {
+                type: "object",
+                properties: {
+                    heading:    { type: "string", description: "Short label e.g. 'Vegetables', 'Gas', 'Salary'" },
+                    expense:    { type: "number", description: "Expense amount in rupees (0 if income entry)" },
+                    income:     { type: "number", description: "Income amount in rupees (0 if expense entry)" },
+                    notes:      { type: "string", description: "Optional extra details" },
+                    entry_date: { type: "string", description: "Date in DD/MM/YYYY format e.g. 27/02/2026. Defaults to today if omitted." }
+                },
+                required: ["heading"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
             name: "update_order",
             description: "Update delivery_status or payment_status of an order by order ID.",
             parameters: {
@@ -526,6 +544,24 @@ function queryDb(sql, workspaceId) {
     }
 }
 
+function addExpense({ heading, expense = 0, income = 0, notes = "", entry_date }, workspaceId) {
+    const db = new Database(resolveWorkspaceDbPath(workspaceId))
+    try {
+        const date = entry_date || (() => {
+            const d = new Date()
+            return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
+        })()
+        const result = db.prepare(
+            "INSERT INTO expenses (entry_date, expense, income, heading, notes) VALUES (?, ?, ?, ?, ?)"
+        ).run(date, expense, income, heading, notes)
+        return `✅ Expense added (id:${result.lastInsertRowid}): ${heading} | expense:₹${expense} income:₹${income} | date:${date}`
+    } catch (err) {
+        return `❌ DB error: ${err.message}`
+    } finally {
+        db.close()
+    }
+}
+
 function updateOrder(orderId, deliveryStatus, paymentStatus, workspaceId) {
     const db = new Database(resolveWorkspaceDbPath(workspaceId))
     try {
@@ -720,7 +756,7 @@ function listTools() {
     const toolsDir = path.resolve(__dirname, "../tools")
     let scripts = ""
     try { scripts = fs.readdirSync(toolsDir).filter(f => f.endsWith(".js")).join(", ") } catch {}
-    return `Tool scripts: ${scripts}\nAdmin agent tools: run_shell, query_db, update_order, send_whatsapp, http_request, load_test, recon, server_health, open_browser, open_in_chrome, navigate, screenshot, click, type_text, press_key, read_page, scrape_page, scroll, wait_for_element, get_current_url, close_browser, write_file, read_file, npm_install, run_node, list_tools, list_governance`
+    return `Tool scripts: ${scripts}\nAdmin agent tools: run_shell, query_db, add_expense, update_order, send_whatsapp, http_request, load_test, recon, server_health, open_browser, open_in_chrome, navigate, screenshot, click, type_text, press_key, read_page, scrape_page, scroll, wait_for_element, get_current_url, close_browser, write_file, read_file, npm_install, run_node, list_tools, list_governance`
 }
 
 function listGovernance(role, workspaceId) {
@@ -852,6 +888,7 @@ async function dispatchTool(name, args, governanceContext = {}) {
         case "open_in_chrome":  return await runMacAutomation(`tell application "Google Chrome" to open location "${args.url}"`, "applescript")
         case "chrome_js":       return await runMacAutomation(`tell application "Google Chrome" to execute front window's active tab javascript "${(args.js||args.code||"").replace(/"/g,"'")}"`, "applescript")
         case "query_db":      return queryDb(args.sql, governanceContext.workspaceId)
+        case "add_expense":   return addExpense(args, governanceContext.workspaceId)
         case "update_order":  return updateOrder(args.order_id, args.delivery_status, args.payment_status, governanceContext.workspaceId)
         case "send_whatsapp": return await sendWhatsapp(args.phone, args.message)
         case "http_request":  return await httpRequest(args.url, args.method, args.body)
@@ -975,7 +1012,7 @@ BROWSER AUTOMATION RULES — ALWAYS FOLLOW:
    Step 6: close_browser
    Step 7: youtube_play → url: "<URL from step 5 or click result>"
    DONE. youtube_play opens Chrome and starts playback automatically. Never use mac_automation for YouTube.
-AVAILABLE TOOLS: run_shell, mac_automation, query_db, update_order, send_whatsapp, http_request, load_test, recon, server_health, open_browser, open_in_chrome, chrome_js, navigate, screenshot, click, type_text, press_key, read_page, scrape_page, scroll, wait_for_element, get_current_url, close_browser, get_dom, type_by_index, click_by_index, write_file, read_file, npm_install, run_node, list_tools, list_governance, run_skill`
+AVAILABLE TOOLS: run_shell, mac_automation, query_db, add_expense, update_order, send_whatsapp, http_request, load_test, recon, server_health, open_browser, open_in_chrome, chrome_js, navigate, screenshot, click, type_text, press_key, read_page, scrape_page, scroll, wait_for_element, get_current_url, close_browser, get_dom, type_by_index, click_by_index, write_file, read_file, npm_install, run_node, list_tools, list_governance, run_skill`
         },
         {
             role: "system",
@@ -999,7 +1036,13 @@ When you finish, give a concise admin summary with:
 - any files changed
 - any remaining risk`
         },
-        { role: "user", content: task }
+        { role: "user", content: options.imageBase64
+            ? [
+                { type: "text", text: task },
+                { type: "image_url", image_url: { url: `data:image/jpeg;base64,${options.imageBase64}` } }
+              ]
+            : task
+        }
     ]
 
     let turns = 0
@@ -1018,12 +1061,26 @@ When you finish, give a concise admin summary with:
         }
         messages = sanitized
 
-        const res  = await fetch(apiUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-            body: JSON.stringify({ model, messages, tools: TOOL_DEFINITIONS })
-        })
-        const data = await res.json()
+        let res, data
+        for (let attempt = 0; attempt < 3; attempt++) {
+            res  = await fetch(apiUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+                body: JSON.stringify({ model, messages, tools: TOOL_DEFINITIONS })
+            })
+            data = await res.json()
+            if (res.status === 429) {
+                const retryAfterMs = (() => {
+                    const msg = data.error?.message || ""
+                    const match = msg.match(/(\d+)ms/)
+                    return match ? parseInt(match[1]) + 200 : 2000
+                })()
+                logger.warn({ attempt, retryAfterMs }, "adminAgent: rate limited, retrying")
+                await new Promise(r => setTimeout(r, retryAfterMs))
+                continue
+            }
+            break
+        }
 
         if (!res.ok) {
             logger.error({ status: res.status, body: JSON.stringify(data).slice(0,500), sentMessages: messages.map(m => ({ role: m.role, tool_calls: m.tool_calls?.map(t=>t.id), tool_call_id: m.tool_call_id })) }, "adminAgent: LLM error")

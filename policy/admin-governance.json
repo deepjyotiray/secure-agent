@@ -19,15 +19,16 @@
     }
   },
   "workers": {
-    "planner": ["list_tools", "read_file", "query_db", "http_request", "server_health"],
-    "researcher": ["list_tools", "read_file", "query_db", "http_request", "load_test", "recon", "server_health", "open_browser", "navigate", "snapshot", "click", "fill", "type_text", "press_key", "read_page", "scrape_page", "scroll", "wait_for_element", "get_current_url", "screenshot", "close_browser", "open_in_chrome", "chrome_js"],
-    "operator": ["list_tools", "read_file", "query_db", "http_request", "load_test", "recon", "server_health", "open_browser", "navigate", "snapshot", "click", "fill", "type_text", "press_key", "read_page", "scrape_page", "scroll", "wait_for_element", "get_current_url", "screenshot", "close_browser", "send_whatsapp", "update_order", "run_shell", "mac_automation", "open_in_chrome", "chrome_js", "youtube_play"],
+    "planner": ["list_tools", "read_file", "query_db", "add_expense", "http_request", "server_health"],
+    "researcher": ["list_tools", "read_file", "query_db", "add_expense", "http_request", "load_test", "recon", "server_health", "open_browser", "navigate", "snapshot", "click", "fill", "type_text", "press_key", "read_page", "scrape_page", "scroll", "wait_for_element", "get_current_url", "screenshot", "close_browser", "open_in_chrome", "chrome_js"],
+    "operator": ["list_tools", "read_file", "query_db", "add_expense", "http_request", "load_test", "recon", "server_health", "open_browser", "navigate", "snapshot", "click", "fill", "type_text", "press_key", "read_page", "scrape_page", "scroll", "wait_for_element", "get_current_url", "screenshot", "close_browser", "send_whatsapp", "update_order", "run_shell", "mac_automation", "open_in_chrome", "chrome_js", "youtube_play"],
     "coder": ["list_tools", "read_file", "write_file", "npm_install", "run_node", "run_shell", "http_request", "query_db", "run_skill"]
   },
   "tools": {
     "run_shell": { "category": "system", "risk": "critical", "mutating": true, "approval": "explicit", "roles": ["operator", "super_admin", "system_admin"] },
     "mac_automation": { "category": "system", "risk": "critical", "mutating": true, "approval": "explicit", "roles": ["operator", "super_admin", "system_admin"] },
     "query_db": { "category": "data", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
+    "add_expense": { "category": "data", "risk": "low", "mutating": true, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
     "update_order": { "category": "data", "risk": "high", "mutating": true, "approval": "explicit", "roles": ["operator", "super_admin", "system_admin"] },
     "send_whatsapp": { "category": "communication", "risk": "high", "mutating": true, "approval": "explicit", "roles": ["operator", "super_admin", "system_admin"] },
     "http_request": { "category": "network", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },

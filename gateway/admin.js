@@ -89,8 +89,8 @@ function buildDbContext(workspaceId) {
 
         const monthExpenses = db.prepare(`
             SELECT COALESCE(SUM(expense),0) as exp, COALESCE(SUM(income),0) as inc
-            FROM expenses WHERE entry_date LIKE ?
-        `).get(`${thisMonth}%`)
+            FROM expenses WHERE entry_date LIKE ? OR entry_date LIKE ?
+        `).get(`${thisMonth}%`, `%/${now.getMonth()+1 < 10 ? '0'+(now.getMonth()+1) : now.getMonth()+1}/${thisYear}`)
 
         const yearRevenue = db.prepare(`
             SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as cnt
@@ -99,8 +99,8 @@ function buildDbContext(workspaceId) {
 
         const yearExpenses = db.prepare(`
             SELECT COALESCE(SUM(expense),0) as exp, COALESCE(SUM(income),0) as inc
-            FROM expenses WHERE entry_date LIKE ?
-        `).get(`${thisYear}%`)
+            FROM expenses WHERE entry_date LIKE ? OR entry_date LIKE ?
+        `).get(`${thisYear}%`, `%/${thisYear}`)
 
         const activeOrders = db.prepare(`
             SELECT id, customer_name, phone, total, delivery_status, payment_status, order_for, expected_delivery
@@ -215,4 +215,54 @@ async function handleAdmin(payload, options = {}) {
     return await queryWithLlm(payload, dbContext)
 }
 
-module.exports = { isAdmin, parseAdminMessage, handleAdmin }
+async function handleAdminImage(imageBase64, caption, options = {}) {
+    const workspaceId = options.workspaceId || getActiveWorkspace()
+    const cfg    = settings.admin.agent_llm || {}
+    const apiKey = cfg.api_key
+    const model  = cfg.model || "gpt-4o-mini"
+    const apiUrl = cfg.url || "https://api.openai.com/v1/chat/completions"
+    const dbPath = loadProfile(workspaceId).dbPath || DB_PATH
+
+    // Step 1: vision LLM extracts entries as JSON
+    const res = await fetch(apiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+        body: JSON.stringify({
+            model,
+            messages: [{
+                role: "user",
+                content: [
+                    { type: "text", text: "Extract all expense and income entries from this image. Return ONLY a JSON array, no explanation. Each item: {\"heading\": string, \"expense\": number, \"income\": number, \"date\": \"DD/MM/YYYY or empty\", \"notes\": string}. Use 0 for the field that does not apply. Do not invent data not visible in the image." },
+                    { type: "image_url", image_url: { url: `data:image/jpeg;base64,${imageBase64}` } }
+                ]
+            }],
+            max_tokens: 1000,
+        })
+    })
+    const data = await res.json()
+    if (!res.ok) return `❌ Vision error: ${data.error?.message || res.status}`
+
+    const raw = data.choices?.[0]?.message?.content || ""
+    const match = raw.match(/\[[\s\S]*\]/)
+    if (!match) return `❌ Could not parse entries from image. LLM said: ${raw.slice(0, 200)}`
+
+    let entries
+    try { entries = JSON.parse(match[0]) } catch { return `❌ JSON parse failed: ${match[0].slice(0, 200)}` }
+    if (!entries.length) return "No expense entries found in image."
+
+    // Step 2: insert directly into DB
+    const today = (() => { const d = new Date(); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}` })()
+    const db   = new Database(dbPath)
+    const stmt = db.prepare("INSERT INTO expenses (entry_date, expense, income, heading, notes) VALUES (?, ?, ?, ?, ?)")
+    const inserted = []
+    try {
+        for (const e of entries) {
+            stmt.run(e.date || today, Number(e.expense) || 0, Number(e.income) || 0, e.heading || "Expense", e.notes || "")
+            inserted.push(`• ${e.heading} — ₹${e.expense || e.income} (${e.date || today})`)
+        }
+    } finally { db.close() }
+
+    return `✅ Added ${inserted.length} entr${inserted.length === 1 ? "y" : "ies"}:\n${inserted.join("\n")}`
+}
+
+module.exports = { isAdmin, parseAdminMessage, handleAdmin, handleAdminImage }

@@ -26,6 +26,127 @@ From their own WhatsApp number with a keyword + PIN:
 - Skills: `ray <pin> convert this text to speech`, `ray <pin> generate an image of a sunset`, `ray <pin> transcribe audio.mp3`
 - Security: `ray <pin> recon https://mysite.com`, `ray <pin> load test https://mysite.com`
 
+## How It Works — Plain English
+
+### The Big Picture
+
+You have a WhatsApp number that your customers message. Behind that number is a Node.js program running on your Mac. That program reads every incoming message and decides what to do with it.
+
+There are two completely different worlds inside this program — the **customer world** and the **owner world**. The program figures out which world a message belongs to by looking at who sent it.
+
+```
+Incoming WhatsApp message
+        ↓
+Is it from the owner's phone?
+   YES → Is it an image?
+            YES → Vision LLM → parse JSON → insert into DB → reply
+            NO  → Shell command / Agent loop / LLM answer
+   NO  → Customer pipeline → Intent → Tool → Reply
+```
+
+---
+
+### The Customer World
+
+When a customer messages your WhatsApp, the message goes through a security pipeline before anything happens:
+
+**Step 1 — Sanitizer**
+Checks if the message looks like an attack. Things like `../../etc/passwd` or `<script>` get blocked immediately. Max 500 characters.
+
+**Step 2 — Domain Gate**
+If the message is more than 3 words, it must contain food-related keywords. Someone asking about cricket scores gets dropped here without ever touching the LLM.
+
+**Step 3 — Intent Parser**
+The LLM reads the message and classifies it into one intent from your `restaurant.yml` manifest — things like `show_menu`, `order_status`, `greet`. The LLM's only job here is to pick a label. It never touches your database or calls any tools.
+
+**Step 4 — Policy Engine**
+Checks if that intent is allowed or restricted.
+
+**Step 5 — Tool Executor**
+Looks up what tool is mapped to that intent in the manifest and runs it deterministically. No LLM involved from this point.
+
+The two tools that handle most customer interactions:
+- **RAG tool** — searches your menu using a vector database and answers questions like "do you have anything without onion"
+- **SQLite tool** — looks up order status, generates UPI QR codes, resends invoices
+
+If the customer asks something the restaurant agent can't handle, it passes to the **support agent** which does FAQ matching first, then LLM with full conversation context, then escalates to you on WhatsApp if needed.
+
+---
+
+### The Owner World
+
+When a message comes from your phone number, the program skips the customer pipeline entirely.
+
+#### Text messages
+
+You send: `admin <pin> <something>`
+
+The program strips the keyword and PIN, then looks at what's left:
+
+- **Looks like a shell command** (`pm2 status`, `tail logs/agent.log`) → runs it directly on your Mac and sends back the output
+- **Starts with `agent`** → hands it to the full AI agent loop (see below)
+- **Anything else** → pulls a live snapshot of your business data from the DB (today's orders, this month's revenue, expenses, unpaid orders) and asks the LLM to answer your question using only that data. So "how much did I make today" just works.
+
+#### Image messages
+
+You send a photo — a receipt, a bill, a handwritten list of expenses.
+
+The program takes that image and sends it directly to OpenAI's vision model with one instruction: *extract all expense entries from this image and return them as JSON*. It gets back something like:
+
+```json
+[
+  {"heading": "Vegetables", "expense": 230, "date": "20/03/2026"},
+  {"heading": "Gas", "expense": 180, "date": "20/03/2026"}
+]
+```
+
+Then it inserts each row directly into your `expenses` table and replies with what was added. No agent, no approval, no tools — just vision → JSON → database.
+
+#### The Agent Loop (for complex tasks)
+
+When you send `admin <pin> agent <task>`, a much more powerful system kicks in. This handles things like "show me unpaid orders from last week", "restart the server", "open YouTube and play lo-fi", "recon my website".
+
+How it works:
+
+1. **Planner** — a separate LLM call creates a short plan: 2–5 steps, each assigned to a worker type
+2. **Loop** — the main LLM sees the plan and starts calling tools, up to 20 turns
+3. **Governance** — before every single tool call, the program checks a policy file. Each tool has a risk level and an approval requirement. A tool blocked by policy never runs — the LLM cannot override this
+4. **Self-healing** — if a tool fails or gets blocked, the LLM diagnoses why and tries a different approach automatically
+
+The workers are labels that control which tools are available at each step:
+- `researcher` — read-only tools, DB queries, browser reading
+- `operator` — shell commands, sending WhatsApp, updating orders, browser clicking
+- `coder` — writing files, installing packages, running scripts
+
+---
+
+### The Database
+
+Everything lives in one SQLite file on your Mac (`orders.db`). SQLite is just a single file that acts like a full database — no server needed.
+
+Tables inside it:
+- `orders` — every customer order ever placed, with status and payment info
+- `expenses` — your manual expense and income entries
+- `menu` — your food items and prices
+- `users` — customer accounts
+- `coupons` — discount codes
+
+---
+
+### The Workspace System
+
+The agent supports multiple workspaces — separate business profiles, each with its own DB path and governance policy. The active workspace is stored in `data/active-workspace.json`. Every DB query and every tool call governance check reads from the active workspace's profile.
+
+Current active workspace: `rays-home-kitchen`
+
+---
+
+### Key Design Principle
+
+The LLM is only ever a classifier or a responder — it never directly touches your database or runs commands. All actual actions go through deterministic code. The governance policy file is the hard boundary that enforces this at runtime.
+
+---
+
 ## Architecture
 
 ### Secure Pipeline
