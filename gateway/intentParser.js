@@ -1,6 +1,7 @@
 "use strict"
 
 const { complete } = require("../providers/llm")
+const { registerGuide } = require("../core/promptGuides")
 
 function buildIntentGuide(allowedIntents, intentHints) {
     return allowedIntents.map(intent => {
@@ -75,5 +76,16 @@ Return exactly:
         return { intent: defaultIntent, filter: {} }
     }
 }
+
+registerGuide({
+    id: "customer-intent",
+    name: "Customer — intent classifier",
+    description: "Prompt that classifies incoming customer messages into intents and extracts filters. Intents come from the agent YAML manifest.",
+    source: "gateway/intentParser.js + agents/*.yml",
+    editable: "Intent hints via agent YAML manifest",
+    render() {
+        return "You are a WhatsApp business intent router.\nReturn JSON only.\n\nAllowed intents: (loaded from manifest at runtime)\nRouting rules: prefer specific business intents, use general_chat for small talk.\n\nMessage: (customer message at runtime)"
+    },
+})
 
 module.exports = { parseIntent }

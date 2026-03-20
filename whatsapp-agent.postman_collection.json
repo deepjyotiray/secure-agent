@@ -752,6 +752,60 @@
               ]
             }
           }
+        },
+        {
+          "name": "Add custom prompt guide",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspace_id}}\",\n  \"id\": \"my-custom-guide\",\n  \"name\": \"My custom guide\",\n  \"description\": \"Custom prompt for a specific use case\",\n  \"prompt\": \"You are a custom assistant that...\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/setup/agent/prompts",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "setup",
+                "agent",
+                "prompts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete custom prompt guide",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspace_id}}\",\n  \"id\": \"my-custom-guide\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/setup/agent/prompts",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "setup",
+                "agent",
+                "prompts"
+              ]
+            }
+          }
         }
       ]
     },

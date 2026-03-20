@@ -156,15 +156,21 @@ The agent auto-discovers your schema. When you call `POST /setup/agent/notes/reg
 
 You can also edit the notes manually via `POST /setup/agent/notes` if the auto-generated version misses something.
 
-### Prompt Guides
+### Prompt Guide Registry
 
-Every LLM prompt in the system is inspectable via API:
+Every LLM prompt in the system is inspectable — and extensible — via API.
+
+The prompt guide system is an open registry. Each module self-registers its prompt guide when it loads (via `registerGuide()`), so adding a new tool or agent automatically makes its prompt visible in the API — no central file to edit. On top of the built-in guides, you can add workspace-level custom guides via the API for business-specific prompt instructions that the built-in modules don't cover.
+
+Why this matters: when the LLM does the wrong thing (picks the wrong tool, generates bad SQL, misclassifies an intent), you need to see the exact prompt it received. Without this, debugging is guesswork. With it, you can read the prompt, spot the gap, and either edit the data model notes, update the agent YAML, or add a custom guide — all without touching code.
 
 ```
 GET /setup/agent/prompts
 ```
 
-Returns all 6 prompt guides rendered with the current workspace's business name, workers, data model notes, and agent manifest config. Each guide includes the source file, what's editable, and the full prompt text the LLM actually receives.
+Returns all prompt guides (built-in + custom) rendered with the current workspace's context. Each guide includes the source file, what's editable, and the full prompt text the LLM actually receives.
+
+Built-in guides (self-registered by each module):
 
 | Guide ID | What it controls |
 |---|---|
@@ -176,6 +182,18 @@ Returns all 6 prompt guides rendered with the current workspace's business name,
 | `customer-concierge` | Public-facing WhatsApp concierge |
 
 Fetch a single guide: `GET /setup/agent/prompts?id=admin-agent-system`
+
+Add a custom guide (stored per workspace in `config/prompt-guides.json`):
+```
+POST /setup/agent/prompts
+{ "id": "my-guide", "name": "My guide", "prompt": "You are..." }
+```
+
+Remove a custom guide:
+```
+DELETE /setup/agent/prompts
+{ "id": "my-guide" }
+```
 
 ---
 
@@ -351,7 +369,7 @@ runtime/
 core/
   workspace.js          # Workspace isolation — paths, active workspace, migration
   dataModelNotes.js     # Auto-introspect DB schema → LLM-generated data model notes per workspace
-  promptGuides.js       # Renders all 6 prompt guides for API inspection
+  promptGuides.js       # Open prompt guide registry — built-in + custom per workspace
 
 gateway/
   sanitizer.js          # 5-layer input sanitization (72 patterns + Unicode normalization)
@@ -588,15 +606,39 @@ Body:
 
 ### Prompt guides & data model notes
 
-**View all prompt guides**
+**View all prompt guides (built-in + custom)**
 ```
 GET /setup/agent/prompts?workspaceId=<id>
 ```
-Returns all 6 prompt guides rendered with the workspace's context. Each guide includes `id`, `name`, `description`, `source`, `editable`, and the full `prompt` text.
+Returns all prompt guides rendered with the workspace's context. Built-in guides are self-registered by each module at load time. Custom guides are loaded from `data/workspaces/<id>/config/prompt-guides.json`. Each guide includes `id`, `name`, `description`, `source`, `editable`, `type` (`built-in` or `custom`), and the full `prompt` text.
 
 **View a single prompt guide**
 ```
 GET /setup/agent/prompts?id=admin-agent-system&workspaceId=<id>
+```
+
+**Add a custom prompt guide**
+```
+POST /setup/agent/prompts
+Body:
+{
+  "workspaceId": "rays-home-kitchen",
+  "id": "my-custom-guide",
+  "name": "My custom guide",
+  "description": "Business-specific instructions for...",
+  "prompt": "You are a specialist that..."
+}
+```
+Custom guides are for business-specific prompt instructions that the built-in modules don't cover — e.g. domain-specific rules, seasonal overrides, or instructions for a new tool you added. Stored per workspace, survives restarts.
+
+**Delete a custom prompt guide**
+```
+DELETE /setup/agent/prompts
+Body:
+{
+  "workspaceId": "rays-home-kitchen",
+  "id": "my-custom-guide"
+}
 ```
 
 **Read data model notes**
@@ -657,6 +699,8 @@ Body:
 | Admin query | POST | `{{base_url}}/setup/admin/run` | — | `{"mode":"query","task":"how much did I make today"}` |
 | Admin agent | POST | `{{base_url}}/setup/admin/run` | — | `{"mode":"agent","task":"show unpaid orders"}` |
 | Prompt guides | GET | `{{base_url}}/setup/agent/prompts` | — | — |
+| Add custom guide | POST | `{{base_url}}/setup/agent/prompts` | — | `{"id":"my-guide","name":"My guide","prompt":"You are..."}` |
+| Delete custom guide | DELETE | `{{base_url}}/setup/agent/prompts` | — | `{"id":"my-guide"}` |
 | Data model notes | GET | `{{base_url}}/setup/agent/notes` | — | — |
 | Regenerate notes | POST | `{{base_url}}/setup/agent/notes/regenerate` | — | `{"workspaceId":"rays-home-kitchen"}` |
 | Governance | GET | `{{base_url}}/governance` | `x-secret: {{secret}}` | — |
@@ -778,7 +822,7 @@ No code changes required.
 - All inter-service calls use a shared secret header (`x-secret`)
 - No business data (DB path, UPI handle, phone numbers) is hardcoded in runtime code
 - Data model notes are auto-generated per workspace from DB introspection — no hardcoded schema hints
-- All LLM prompts are inspectable via `GET /setup/agent/prompts` — full transparency into what the LLM receives
+- All LLM prompts are inspectable via `GET /setup/agent/prompts` — full transparency into what the LLM receives. Extensible via custom guides per workspace
 - `tmp/`, `out/`, `.playwright-cli/` are gitignored — no runtime artifacts committed
 - Transport-agnostic pipeline — the same security gates apply whether the message arrives via WhatsApp, HTTP, or CLI
 

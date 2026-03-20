@@ -244,7 +244,7 @@ GET /setup/profile?workspace=bloom-flower-shop
 
 Returns the full profile, draft file list, and workspace summary.
 
-## Step 10 — Inspect prompt guides
+## Step 10 — Inspect and extend prompt guides
 
 See exactly what the LLM receives for every prompt in the system:
 
@@ -252,12 +252,29 @@ See exactly what the LLM receives for every prompt in the system:
 GET /setup/agent/prompts?workspaceId=bloom-flower-shop
 ```
 
-Returns 6 prompt guides rendered with the workspace's business name, workers, data model notes, and agent manifest. Each guide shows the source file, what's editable, and the full prompt text.
+Returns all prompt guides — both built-in (self-registered by each module) and custom (per workspace). Each guide shows the source file, what's editable, and the full prompt text.
 
 Fetch a single guide:
 ```
 GET /setup/agent/prompts?id=admin-agent-system&workspaceId=bloom-flower-shop
 ```
+
+If the built-in guides don't cover a business-specific need (e.g. "always suggest seasonal bouquets in December", or instructions for a custom tool you added), add a custom prompt guide:
+
+```
+POST /setup/agent/prompts
+{
+  "workspaceId": "bloom-flower-shop",
+  "id": "seasonal-rules",
+  "name": "Seasonal business rules",
+  "description": "Month-specific product recommendations",
+  "prompt": "In December, always suggest Christmas bouquets first. In February, lead with Valentine's arrangements."
+}
+```
+
+Custom guides are stored in `data/workspaces/bloom-flower-shop/config/prompt-guides.json` and survive restarts. Remove with `DELETE /setup/agent/prompts { "id": "seasonal-rules" }`.
+
+Why this matters: when the agent does the wrong thing, you need to see the exact prompt it received. This API gives you full transparency — and the ability to fix it without touching code.
 
 ## What each workspace gets
 
@@ -265,7 +282,8 @@ GET /setup/agent/prompts?id=admin-agent-system&workspaceId=bloom-flower-shop
 data/workspaces/bloom-flower-shop/
 ├── profile.json                    # Business profile
 ├── config/
-│   └── data-model-notes.md          # Auto-generated DB schema notes (used by agent + query mode)
+│   ├── data-model-notes.md          # Auto-generated DB schema notes (used by agent + query mode)
+│   └── prompt-guides.json           # Custom prompt guides added via API
 ├── policy/
 │   └── admin-governance.json       # Governance rules (roles, workers, tools)
 ├── logs/
@@ -292,8 +310,10 @@ config/settings.json                # LLM + admin config
 | Notes | POST | `/setup/agent/notes/regenerate` | Auto-generate data model notes from DB |
 | Notes | GET | `/setup/agent/notes?workspaceId=<id>` | Read data model notes |
 | Notes | POST | `/setup/agent/notes` | Manually edit data model notes |
-| Prompts | GET | `/setup/agent/prompts?workspaceId=<id>` | View all prompt guides |
+| Prompts | GET | `/setup/agent/prompts?workspaceId=<id>` | View all prompt guides (built-in + custom) |
 | Prompts | GET | `/setup/agent/prompts?id=<id>&workspaceId=<id>` | View single prompt guide |
+| Prompts | POST | `/setup/agent/prompts` | Add custom prompt guide |
+| Prompts | DELETE | `/setup/agent/prompts` | Remove custom prompt guide |
 | Governance | POST | `/setup/governance/policy` | Update tool access |
 | Governance | GET | `/setup/governance` | View governance snapshot |
 | Workspaces | GET | `/setup/workspaces` | List all workspaces |

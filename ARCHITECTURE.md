@@ -515,7 +515,8 @@ Each business workspace is fully isolated:
 data/workspaces/<workspace-id>/
 ├── profile.json                    # Business profile (name, DB path, config)
 ├── config/
-│   └── data-model-notes.md          # Auto-generated DB schema notes (used by agent + query mode)
+│   ├── data-model-notes.md          # Auto-generated DB schema notes (used by agent + query mode)
+│   └── prompt-guides.json           # Custom prompt guides added via API
 ├── policy/
 │   └── admin-governance.json       # Governance rules (roles, workers, tools)
 ├── logs/
@@ -574,17 +575,26 @@ At runtime:
 
 Fallback: If the LLM is unavailable during generation, a raw schema dump is saved instead.
 
-### Prompt Guides
+### Prompt Guide Registry
 
-**File:** `core/promptGuides.js`
+**File:** `core/promptGuides.js`  
+**Custom storage:** `data/workspaces/<id>/config/prompt-guides.json`
 
-Every LLM prompt in the system is inspectable via API:
+The prompt guide system is an open registry with two sources:
+
+**1. Built-in guides (self-registered):** Each module calls `registerGuide()` at require-time to register its own prompt. No central file needs to know about every prompt — adding a new tool or agent module automatically makes its prompt visible in the API.
+
+**2. Custom guides (per workspace):** Stored in `config/prompt-guides.json` inside the workspace directory. Added/removed via API. Use these for business-specific instructions that the built-in modules don't cover — seasonal rules, domain-specific constraints, instructions for custom tools.
+
+Why this exists: when the LLM does the wrong thing (picks the wrong tool, generates bad SQL, misclassifies an intent), you need to see the exact prompt it received. Without prompt visibility, debugging is guesswork. With it, you read the prompt, spot the gap, and fix it via data model notes, agent YAML, or a custom guide — no code changes.
 
 ```
-GET /setup/agent/prompts?workspaceId=<id>
+GET /setup/agent/prompts?workspaceId=<id>       → all guides (built-in + custom)
+POST /setup/agent/prompts                        → add/update custom guide
+DELETE /setup/agent/prompts                      → remove custom guide
 ```
 
-Returns 6 prompt guides, each rendered with the current workspace's context:
+Built-in guides (self-registered by each module):
 
 | Guide ID | Source | What it controls |
 |---|---|---|
@@ -601,7 +611,21 @@ Each guide includes:
 - `description` — what the prompt does
 - `source` — which file(s) contain the prompt
 - `editable` — how to change it (API endpoint, config file, or YAML manifest)
+- `type` — `built-in` (self-registered by code) or `custom` (stored per workspace)
 - `prompt` — the full rendered prompt text the LLM actually receives
+
+To add a new built-in guide from any module:
+```javascript
+const { registerGuide } = require("../core/promptGuides")
+registerGuide({
+    id: "my-new-prompt",
+    name: "My new prompt",
+    description: "What it does",
+    source: "path/to/file.js",
+    editable: "How to change it",
+    render(workspaceId) { return "the rendered prompt text" },
+})
+```
 
 ---
 

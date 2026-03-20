@@ -10,6 +10,7 @@ const { authorizeToolCall } = require("./adminGovernance")
 const { getActiveWorkspace } = require("../core/workspace")
 const { loadProfile } = require("../setup/profileService")
 const { loadNotes } = require("../core/dataModelNotes")
+const { registerGuide } = require("../core/promptGuides")
 const logger = require("./logger")
 
 const DB_PATH = settings.admin.db_path
@@ -346,5 +347,19 @@ async function handleAdminImage(imageBase64, caption, options = {}) {
 
     return `✅ Added ${inserted.length} entr${inserted.length === 1 ? "y" : "ies"}:\n${inserted.join("\n")}`
 }
+
+registerGuide({
+    id: "admin-query-sql",
+    name: "Admin query — SQL generation",
+    description: "Prompt sent to the LLM to generate a read-only SQL query from a natural language question. Used in query mode (non-agent).",
+    source: "gateway/admin.js",
+    editable: "Data model notes section — via POST /setup/agent/notes",
+    render(workspaceId) {
+        const biz = (loadProfile(workspaceId).businessName || workspaceId)
+        const notes = loadNotes(workspaceId)
+        const notesBlock = notes ? `\nData model notes:\n${notes}\n` : ""
+        return `You are a SQLite expert for ${biz}.\nToday is YYYY-MM-DD.\n\nDatabase schema: (introspected at runtime)\n${notesBlock}\nReturn ONLY raw SQL, no explanation.\n\nQuestion: (user's question at runtime)`
+    },
+})
 
 module.exports = { isAdmin, parseAdminMessage, handleAdmin, handleAdminImage }

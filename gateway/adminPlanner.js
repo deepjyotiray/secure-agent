@@ -2,6 +2,7 @@
 
 const { complete } = require("../providers/llm")
 const { listWorkers } = require("./adminWorkers")
+const { registerGuide } = require("../core/promptGuides")
 
 function safeJson(text) {
     if (!text) return null
@@ -79,5 +80,17 @@ Return exactly:
         return fallbackPlan(task)
     }
 }
+
+registerGuide({
+    id: "admin-planner",
+    name: "Admin planner",
+    description: "Prompt sent to the LLM to generate an execution plan before the agent loop starts.",
+    source: "gateway/adminPlanner.js",
+    editable: "Workers via gateway/adminWorkers.js",
+    render() {
+        const workers = listWorkers().map(w => `- ${w.name}: ${w.description}. Strengths: ${w.strengths.join(", ")}`).join("\n")
+        return `You are the planner for a secure admin operations agent.\nReturn JSON only.\n\nAvailable workers:\n${workers}\n\nTask: (user's task at runtime)`
+    },
+})
 
 module.exports = { buildAdminPlan }

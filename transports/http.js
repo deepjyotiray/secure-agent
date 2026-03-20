@@ -22,7 +22,7 @@ const { listApprovals, approveRequest } = require("../gateway/adminApprovals")
 const { handleAdmin, handleAdminImage } = require("../gateway/admin")
 const { listWorkers } = require("../gateway/adminWorkers")
 const { loadNotes, saveNotes, generateNotes } = require("../core/dataModelNotes")
-const { getPromptGuides, getPromptGuide } = require("../core/promptGuides")
+const { getPromptGuides, getPromptGuide, addCustomGuide, removeCustomGuide } = require("../core/promptGuides")
 const { getActiveWorkspace, listWorkspaceIds } = require("../core/workspace")
 
 const PORT   = settings.transports?.http?.port || 3010
@@ -270,6 +270,32 @@ const server = http.createServer(async (req, res) => {
             sendJson(res, 200, { ok: true, ...result })
         } else {
             sendJson(res, 200, { ok: true, ...getPromptGuides(workspaceId) })
+        }
+        return
+    }
+
+    if (req.method === "POST" && pathname === "/setup/agent/prompts") {
+        try {
+            const body = await readBody(req)
+            const workspaceId = body.workspaceId || getActiveWorkspace()
+            if (!body.id || !body.prompt) { sendJson(res, 400, { error: "id and prompt required" }); return }
+            const guide = addCustomGuide(workspaceId, body)
+            sendJson(res, 200, { ok: true, workspaceId, guide })
+        } catch (err) {
+            sendJson(res, 500, { error: err.message })
+        }
+        return
+    }
+
+    if (req.method === "DELETE" && pathname === "/setup/agent/prompts") {
+        try {
+            const body = await readBody(req)
+            const workspaceId = body.workspaceId || getActiveWorkspace()
+            if (!body.id) { sendJson(res, 400, { error: "id required" }); return }
+            const removed = removeCustomGuide(workspaceId, body.id)
+            sendJson(res, 200, { ok: true, removed })
+        } catch (err) {
+            sendJson(res, 500, { error: err.message })
         }
         return
     }
