@@ -155,9 +155,87 @@ ${recentOrders.map(o => `- ${o.id} | ${o.customer_name} | ₹${o.total} | ${o.de
     }
 }
 
-// ── LLM natural language query ────────────────────────────────────────────────
+// ── LLM-driven dynamic SQL query ──────────────────────────────────────────────
 
-async function queryWithLlm(question, dbContext) {
+function getDbSchema(dbPath) {
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        const tables = db.prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).all().map(t => t.name)
+        return tables.map(t => {
+            const cols = db.prepare(`PRAGMA table_info("${t}")`).all()
+            const sample = db.prepare(`SELECT * FROM "${t}" ORDER BY rowid DESC LIMIT 2`).all()
+            return `TABLE ${t} (${cols.map(c => `${c.name} ${c.type}`).join(", ")})\nSample rows: ${JSON.stringify(sample)}`
+        }).join("\n\n")
+    } finally { db.close() }
+}
+
+async function queryWithLlm(question, dbContext, workspaceId) {
+    const businessName = settings.admin.business_name || "the business"
+    const dbPath = loadProfile(workspaceId).dbPath || DB_PATH
+    const schema = getDbSchema(dbPath)
+    const now = new Date()
+    const dd = String(now.getDate()).padStart(2, "0")
+    const mm = String(now.getMonth() + 1).padStart(2, "0")
+    const yyyy = now.getFullYear()
+
+    // Step 1: generate SQL
+    const sqlPrompt = `You are a SQLite expert for ${businessName}.
+Today is ${yyyy}-${mm}-${dd} (also ${dd}/${mm}/${yyyy} in DD/MM/YYYY format).
+
+Database schema:
+${schema}
+
+IMPORTANT:
+- expenses.entry_date uses DD/MM/YYYY format (e.g. "${dd}/${mm}/${yyyy}")
+- orders.order_date and orders.order_for use YYYY-MM-DD format
+- Write a single read-only SELECT query to answer the question
+- Return ONLY the raw SQL, no explanation, no markdown fences
+
+Question: ${question}`
+
+    let sql
+    try {
+        sql = (await complete(sqlPrompt) || "").trim().replace(/^```\w*\n?|\n?```$/g, "").trim()
+    } catch {
+        return "LLM unavailable for SQL generation. Raw data:\n" + dbContext
+    }
+
+    if (!sql || !/^SELECT\b/i.test(sql)) {
+        // Fallback to summary-based answer
+        return await summaryFallback(question, dbContext)
+    }
+
+    logger.info({ sql }, "admin query: generated SQL")
+
+    // Step 2: execute SQL
+    let rows
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        rows = db.prepare(sql).all()
+    } catch (err) {
+        logger.warn({ err, sql }, "admin query: SQL execution failed, falling back")
+        return await summaryFallback(question, dbContext)
+    } finally { db.close() }
+
+    // Step 3: summarise results
+    const answerPrompt = `You are an admin assistant for ${businessName}. Be concise, use ₹ for currency.
+
+The admin asked: ${question}
+SQL used: ${sql}
+Results (${rows.length} rows): ${JSON.stringify(rows).slice(0, 4000)}
+
+Provide a clear, concise answer.`
+
+    try {
+        return await complete(answerPrompt) || `Query returned ${rows.length} rows:\n${JSON.stringify(rows, null, 2)}`
+    } catch {
+        return `Query returned ${rows.length} rows:\n${JSON.stringify(rows, null, 2)}`
+    }
+}
+
+async function summaryFallback(question, dbContext) {
     const businessName = settings.admin.business_name || "the business"
     const prompt = `You are an admin assistant for ${businessName}.
 Answer the admin's question using ONLY the data provided below. Be concise and use numbers/facts directly.
@@ -167,7 +245,6 @@ ${dbContext}
 
 Admin question: ${question}
 Answer:`
-
     try {
         return await complete(prompt) || "No response from LLM."
     } catch {
@@ -210,9 +287,9 @@ async function handleAdmin(payload, options = {}) {
         return `\`\`\`\n${result}\n\`\`\``
     }
 
-    // Natural language — build DB context and ask LLM
+    // Natural language — dynamic SQL via LLM
     const dbContext = buildDbContext(workspaceId)
-    return await queryWithLlm(payload, dbContext)
+    return await queryWithLlm(payload, dbContext, workspaceId)
 }
 
 async function handleAdminImage(imageBase64, caption, options = {}) {
