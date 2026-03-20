@@ -1,0 +1,489 @@
+{
+  "info": {
+    "name": "secure-agent",
+    "description": "Complete API reference for the secure-agent server.\n\n**Auth**: Most endpoints require the `x-secret` header matching `api.secret` in `config/settings.json`.\n\n**Variables**:\n- `base_url` — HTTP transport (default: `http://127.0.0.1:3010`)\n- `internal_url` — Internal send API (default: `http://127.0.0.1:3001`)\n- `secret` — Value of `api.secret` from `config/settings.json`\n\n**Folders**:\n1. **Utility** — Health, capabilities, governance, approvals\n2. **Customer pipeline** — Simulate WhatsApp customer messages\n3. **Agent management** — Inspect and hot-edit intents and tools without restarting\n4. **Admin — query** — Natural language DB queries (no agent loop)\n5. **Admin — agent** — Full agentic tasks (uses agent loop + governance)\n6. **Internal send API** — Push outbound WhatsApp messages",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url",      "value": "http://127.0.0.1:3010" },
+    { "key": "internal_url", "value": "http://127.0.0.1:3001" },
+    { "key": "secret",       "value": "45f7d14025261b692ba5eb8254d46cd22a8e20b892701fdf" }
+  ],
+  "item": [
+    {
+      "name": "Setup auth",
+      "description": "Login to get the session cookie required by all /setup/* endpoints (admin queries, agent tasks, profile, governance, approvals).",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"linkedin\",\n  \"password\": \"community\"\n}" },
+            "description": "Returns a `secureai_session` cookie (12 h TTL). Postman stores it automatically — subsequent /setup/* requests will include it. Run this once before using any Admin or Setup endpoint."
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/logout",
+            "description": "Clears the session cookie."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Utility",
+      "description": "Diagnostic and observability endpoints. No auth required for /health and /capabilities.",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health",
+            "description": "Returns `{ status, agent, timestamp }`. No auth required. Use this to confirm the server is up and an agent manifest is loaded."
+          }
+        },
+        {
+          "name": "Capabilities",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/capabilities",
+            "description": "Returns the agent name, list of intent names, list of tool names, and a governance summary (role, worker count, governed tool count). No auth required."
+          }
+        },
+        {
+          "name": "Governance snapshot",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/governance",
+            "header": [{ "key": "x-secret", "value": "{{secret}}" }],
+            "description": "Full governance policy dump — role, all tool policies (category, risk, approval mode, mutating flag), and worker allowlists. Requires x-secret."
+          }
+        },
+        {
+          "name": "List pending approvals",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/governance/approvals",
+            "header": [{ "key": "x-secret", "value": "{{secret}}" }],
+            "description": "Lists all tool calls currently blocked and waiting for manual approval. Returns array of `{ id, tool, args, requestedAt }`. Requires x-secret."
+          }
+        },
+        {
+          "name": "Approve blocked tool call",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/approvals/approve",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"apr-xxxx-xxxx\"\n}"
+            },
+            "description": "Approves a pending tool call by its ID (from the list above). The blocked agent turn will resume. No x-secret required (setup session auth)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer pipeline",
+      "description": "Simulate inbound WhatsApp messages from a customer. The agent runs the full pipeline: sanitize → intent route → tool execute. Use a real phone number format (e.g. 919XXXXXXXXX).",
+      "item": [
+        {
+          "name": "Greet",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/message",
+            "header": [
+              { "key": "x-secret", "value": "{{secret}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"hi\"\n}" },
+            "description": "Triggers the `greet` intent → `concierge` tool. Good first test to confirm the agent is responding."
+          }
+        },
+        {
+          "name": "Show menu",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/message",
+            "header": [
+              { "key": "x-secret", "value": "{{secret}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"show me the menu\"\n}" },
+            "description": "Triggers the `show_menu` intent → `rag_menu` tool. Queries the menu table in orders.db and returns formatted results."
+          }
+        },
+        {
+          "name": "Order status",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/message",
+            "header": [
+              { "key": "x-secret", "value": "{{secret}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"what is my order status\"\n}" },
+            "description": "Triggers the `order_status` intent → `order_lookup` tool. Looks up orders by phone number."
+          }
+        },
+        {
+          "name": "Place order",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/message",
+            "header": [
+              { "key": "x-secret", "value": "{{secret}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"I want to order 2 dal makhani\"\n}" },
+            "description": "Triggers the `place_order` intent → `order_create` tool. Starts a cart session for the phone number."
+          }
+        },
+        {
+          "name": "Support query",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/message",
+            "header": [
+              { "key": "x-secret", "value": "{{secret}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"my order was wrong\"\n}" },
+            "description": "Triggers the `support` intent → `support_faq` tool. Shows the support menu and escalation options."
+          }
+        },
+        {
+          "name": "General chat",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/message",
+            "header": [
+              { "key": "x-secret", "value": "{{secret}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"what's a good dish for a rainy day?\"\n}" },
+            "description": "Triggers the `general_chat` intent → `concierge` tool. Business-aware small talk and recommendations."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Agent management",
+      "description": "Hot-edit the live agent manifest (intents + tools) without restarting the server. Changes are written to the YAML file immediately.\n\n**Intent** = a customer goal (e.g. `show_menu`) mapped to a tool.\n**Tool** = a capability the agent can invoke (e.g. `rag_menu`, `order_lookup`).\n\nAll endpoints require x-secret.",
+      "item": [
+        {
+          "name": "List all intents",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/agent/intents",
+            "header": [{ "key": "x-secret", "value": "{{secret}}" }],
+            "description": "Returns all intents with full detail: `name`, `tool`, `auth_required`, and `hint` (the routing hint shown to the LLM classifier). Use this to audit what the agent can currently handle."
+          }
+        },
+        {
+          "name": "Get single intent",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/agent/intents/show_menu",
+            "header": [{ "key": "x-secret", "value": "{{secret}}" }],
+            "description": "Returns full detail for one intent by name. Returns 404 if not found. Change `show_menu` in the URL to any intent name."
+          }
+        },
+        {
+          "name": "Add intent",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/agent/intents",
+            "header": [
+              { "key": "x-secret", "value": "{{secret}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"track_delivery\",\n  \"tool\": \"order_lookup\",\n  \"auth_required\": false,\n  \"hint\": \"customer asks where their delivery is or wants live tracking\"\n}"
+            },
+            "description": "Adds a new intent to the live manifest. `name` and `tool` are required. `tool` must already exist in the tools section. `hint` is the routing hint shown to the LLM classifier — write it as a natural language description of when this intent should fire."
+          }
+        },
+        {
+          "name": "Delete intent",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/agent/intents/track_delivery",
+            "header": [{ "key": "x-secret", "value": "{{secret}}" }],
+            "description": "Removes an intent from the live manifest by name. Returns 400 if the intent doesn't exist. Change `track_delivery` in the URL to the intent you want to remove."
+          }
+        },
+        {
+          "name": "List all tools",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/agent/tools",
+            "header": [{ "key": "x-secret", "value": "{{secret}}" }],
+            "description": "Returns all tools with their full config: `name`, `type`, and all type-specific fields (db_path, system_prompt, escalation_phone, etc.). Use this to see exactly what each tool is configured with."
+          }
+        },
+        {
+          "name": "Get single tool",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/agent/tools/rag_menu",
+            "header": [{ "key": "x-secret", "value": "{{secret}}" }],
+            "description": "Returns full config for one tool by name. Returns 404 if not found. Change `rag_menu` in the URL to any tool name."
+          }
+        },
+        {
+          "name": "Add tool — rag",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/agent/tools",
+            "header": [
+              { "key": "x-secret", "value": "{{secret}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"rag_offers\",\n  \"type\": \"rag\",\n  \"db_path\": \"/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db\",\n  \"system_prompt\": \"You are a helpful assistant for Ray's Home Kitchen. Answer questions about offers and discounts using only the provided data.\"\n}"
+            },
+            "description": "Adds a RAG (retrieval-augmented generation) tool. Queries the DB and feeds results to the LLM. Required fields: `name`, `type: rag`, `db_path`, `system_prompt`."
+          }
+        },
+        {
+          "name": "Add tool — support",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/agent/tools",
+            "header": [
+              { "key": "x-secret", "value": "{{secret}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"support_billing\",\n  \"type\": \"support\",\n  \"db_path\": \"/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db\",\n  \"escalation_phone\": \"+919594614752\"\n}"
+            },
+            "description": "Adds a support tool. Shows a support menu and escalates to a human via phone. Required fields: `name`, `type: support`, `db_path`, `escalation_phone`."
+          }
+        },
+        {
+          "name": "Add tool — sqlite (order lookup)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/agent/tools",
+            "header": [
+              { "key": "x-secret", "value": "{{secret}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"order_lookup_v2\",\n  \"type\": \"sqlite\",\n  \"db_path\": \"/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db\",\n  \"upi_handle\": \"XXXXXXXXXX@pthdfc\",\n  \"website\": \"healthymealspot.com\",\n  \"brand_label\": \"healthymealspot.com\",\n  \"country_code\": \"91\"\n}"
+            },
+            "description": "Adds an order-lookup tool backed by SQLite. Looks up orders by phone, generates UPI QR codes, and shows delivery status. Required fields: `name`, `type: sqlite`, `db_path`, `upi_handle`, `website`, `brand_label`, `country_code`."
+          }
+        },
+        {
+          "name": "Add tool — business_chat (concierge)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/agent/tools",
+            "header": [
+              { "key": "x-secret", "value": "{{secret}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"concierge_v2\",\n  \"type\": \"business_chat\",\n  \"business_name\": \"Ray's Home Kitchen\",\n  \"cuisine\": \"home-style Indian food\",\n  \"tone\": \"warm, sharp, and naturally business-aware\",\n  \"greeting\": \"Welcome to Ray's Home Kitchen.\",\n  \"signature_line\": \"If you're hungry, I can also suggest something from today's menu.\",\n  \"db_path\": \"/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db\"\n}"
+            },
+            "description": "Adds a general-purpose business chat tool. Used for greetings, small talk, and out-of-domain questions. Required fields: `name`, `type: business_chat`, `business_name`, `db_path`."
+          }
+        },
+        {
+          "name": "Delete tool",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/agent/tools/rag_offers",
+            "header": [{ "key": "x-secret", "value": "{{secret}}" }],
+            "description": "Removes a tool from the live manifest by name. Returns 400 if the tool doesn't exist. Note: intents pointing to this tool will break — delete or update those intents first. Change `rag_offers` in the URL to the tool you want to remove."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — query",
+      "description": "Natural language queries against the orders.db database. Runs in `query` mode — no agent loop, no governance, just a direct LLM → SQL → result pipeline. Fast and safe for read-only questions.\n\nNo x-secret required (uses setup session auth or is open in dev).",
+      "item": [
+        {
+          "name": "How much did I make today",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/admin/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"how much did I make today\"\n}" },
+            "description": "Sums today's revenue from the orders table."
+          }
+        },
+        {
+          "name": "Which orders are unpaid",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/admin/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"which orders are unpaid\"\n}" },
+            "description": "Lists all orders with payment_status != paid."
+          }
+        },
+        {
+          "name": "Profit this month",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/admin/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"how much profit this month\"\n}" },
+            "description": "Calculates income minus expenses for the current month from the expenses table."
+          }
+        },
+        {
+          "name": "Today's active orders",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/admin/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"show today's active orders\"\n}" },
+            "description": "Lists orders placed today that are not yet delivered or cancelled."
+          }
+        },
+        {
+          "name": "Revenue this year",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/admin/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"overall revenue this year\"\n}" },
+            "description": "Total revenue from all paid orders in the current calendar year."
+          }
+        },
+        {
+          "name": "Top selling items",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/admin/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"what are the top 5 selling items this month\"\n}" },
+            "description": "Ranks menu items by order frequency for the current month."
+          }
+        },
+        {
+          "name": "Expenses this week",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/admin/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"show all expenses this week\"\n}" },
+            "description": "Lists all expense entries from the expenses table for the current week. Dates are stored as DD/MM/YYYY."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — agent",
+      "description": "Full agentic tasks. Runs in `agent` mode — uses the admin agent loop with 35+ tools, governance, and self-healing. Use this for mutations, system tasks, and multi-step operations.\n\nPrefix your task with `agent` or just write it naturally — the server prepends `agent` automatically in agent mode.",
+      "item": [
+        {
+          "name": "pm2 status",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/admin/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"pm2 status\"\n}" },
+            "description": "Runs `pm2 list` via the shell tool and returns process status. Good first test for the agent loop."
+          }
+        },
+        {
+          "name": "Show unpaid orders",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/admin/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"show unpaid orders from this week\"\n}" },
+            "description": "Agent queries the DB and formats a list of unpaid orders."
+          }
+        },
+        {
+          "name": "Mark order as delivered",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/admin/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"mark order ORD-123 as delivered\"\n}" },
+            "description": "Mutating operation — agent updates the order status in the DB. Governed by admin-governance.json (low risk, no approval needed)."
+          }
+        },
+        {
+          "name": "Add expense manually",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/admin/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"add expense: vegetables 450 rupees today\"\n}" },
+            "description": "Agent uses the `add_expense` tool to insert a row into the expenses table. Date stored as DD/MM/YYYY."
+          }
+        },
+        {
+          "name": "Recon website",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/admin/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"recon https://healthymealspot.com\"\n}" },
+            "description": "Agent fetches the website and summarises what it finds — useful for checking if the site is live and what it shows."
+          }
+        },
+        {
+          "name": "Tail agent log",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/admin/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"tail -n 50 logs/agent.log\"\n}" },
+            "description": "Agent runs the shell command and returns the last 50 lines of the agent log."
+          }
+        },
+        {
+          "name": "Apply coupon to order",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/setup/admin/run",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"apply coupon SAVE10 to order ORD-456\"\n}" },
+            "description": "Agent looks up the coupon in the coupons table and applies it to the specified order."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Internal send API",
+      "description": "Push outbound WhatsApp messages directly to a phone number. Runs on the internal port (3001) — not exposed publicly. Requires x-secret.",
+      "item": [
+        {
+          "name": "Send WhatsApp message",
+          "request": {
+            "method": "POST",
+            "url": "{{internal_url}}/send",
+            "header": [
+              { "key": "x-secret", "value": "{{secret}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919000000000\",\n  \"message\": \"hello from the API\"\n}"
+            },
+            "description": "Sends a WhatsApp message to the given phone number via the connected WhatsApp session. Phone must include country code with + prefix."
+          }
+        }
+      ]
+    }
+  ]
+}
