@@ -21,6 +21,8 @@ const { getGovernanceSnapshot, updatePolicy } = require("../gateway/adminGoverna
 const { listApprovals, approveRequest } = require("../gateway/adminApprovals")
 const { handleAdmin, handleAdminImage } = require("../gateway/admin")
 const { listWorkers } = require("../gateway/adminWorkers")
+const { loadNotes, saveNotes, generateNotes } = require("../core/dataModelNotes")
+const { getPromptGuides, getPromptGuide } = require("../core/promptGuides")
 const { getActiveWorkspace, listWorkspaceIds } = require("../core/workspace")
 
 const PORT   = settings.transports?.http?.port || 3010
@@ -254,6 +256,50 @@ const server = http.createServer(async (req, res) => {
             sendJson(res, 200, { ok: true, policy })
         } catch (err) {
             logger.error({ err }, "setup governance policy update failed")
+            sendJson(res, 500, { error: err.message })
+        }
+        return
+    }
+
+    if (req.method === "GET" && pathname === "/setup/agent/prompts") {
+        const workspaceId = url.searchParams.get("workspaceId") || getActiveWorkspace()
+        const id = url.searchParams.get("id")
+        if (id) {
+            const result = getPromptGuide(id, workspaceId)
+            if (!result) { sendJson(res, 404, { error: `guide '${id}' not found` }); return }
+            sendJson(res, 200, { ok: true, ...result })
+        } else {
+            sendJson(res, 200, { ok: true, ...getPromptGuides(workspaceId) })
+        }
+        return
+    }
+
+    if (req.method === "GET" && pathname === "/setup/agent/notes") {
+        const workspaceId = (url.searchParams.get("workspaceId") || getActiveWorkspace())
+        sendJson(res, 200, { ok: true, workspaceId, notes: loadNotes(workspaceId) })
+        return
+    }
+
+    if (req.method === "POST" && pathname === "/setup/agent/notes") {
+        try {
+            const body = await readBody(req)
+            const workspaceId = body.workspaceId || getActiveWorkspace()
+            if (!body.notes) { sendJson(res, 400, { error: "notes field required" }); return }
+            const notes = saveNotes(workspaceId, body.notes)
+            sendJson(res, 200, { ok: true, workspaceId, notes })
+        } catch (err) {
+            sendJson(res, 500, { error: err.message })
+        }
+        return
+    }
+
+    if (req.method === "POST" && pathname === "/setup/agent/notes/regenerate") {
+        try {
+            const body = await readBody(req)
+            const workspaceId = body.workspaceId || getActiveWorkspace()
+            const notes = await generateNotes(workspaceId)
+            sendJson(res, 200, { ok: true, workspaceId, notes })
+        } catch (err) {
             sendJson(res, 500, { error: err.message })
         }
         return

@@ -149,7 +149,34 @@ Response:
 }
 ```
 
-## Step 6 — Configure governance
+## Step 6 — Generate data model notes
+
+Auto-introspect the database so the admin agent and query mode know the schema:
+
+```
+POST /setup/agent/notes/regenerate
+{ "workspaceId": "bloom-flower-shop" }
+```
+
+This reads every table, column, sample row, and date format from the workspace's database and asks the LLM to produce concise data model notes. The result is cached at `data/workspaces/bloom-flower-shop/config/data-model-notes.md`.
+
+Both the admin agent system prompt and the query mode SQL generator load these notes at runtime — so the LLM knows your schema without any hardcoded hints.
+
+To review what was generated:
+```
+GET /setup/agent/notes?workspaceId=bloom-flower-shop
+```
+
+To manually edit (e.g. add a gotcha the LLM missed):
+```
+POST /setup/agent/notes
+{
+  "workspaceId": "bloom-flower-shop",
+  "notes": "## Data Model Notes\n\n- appointments.date uses YYYY-MM-DD format..."
+}
+```
+
+## Step 7 — Configure governance
 
 Set tool access policies for this workspace:
 
@@ -178,7 +205,7 @@ POST /setup/governance/policy
 
 This creates `data/workspaces/bloom-flower-shop/policy/admin-governance.json`.
 
-## Step 7 — Switch between businesses
+## Step 8 — Switch between businesses
 
 **Option A — Switch globally:**
 ```
@@ -209,7 +236,7 @@ Returns:
 }
 ```
 
-## Step 8 — Verify the profile
+## Step 9 — Verify the profile
 
 ```
 GET /setup/profile?workspace=bloom-flower-shop
@@ -217,11 +244,28 @@ GET /setup/profile?workspace=bloom-flower-shop
 
 Returns the full profile, draft file list, and workspace summary.
 
+## Step 10 — Inspect prompt guides
+
+See exactly what the LLM receives for every prompt in the system:
+
+```
+GET /setup/agent/prompts?workspaceId=bloom-flower-shop
+```
+
+Returns 6 prompt guides rendered with the workspace's business name, workers, data model notes, and agent manifest. Each guide shows the source file, what's editable, and the full prompt text.
+
+Fetch a single guide:
+```
+GET /setup/agent/prompts?id=admin-agent-system&workspaceId=bloom-flower-shop
+```
+
 ## What each workspace gets
 
 ```
 data/workspaces/bloom-flower-shop/
 ├── profile.json                    # Business profile
+├── config/
+│   └── data-model-notes.md          # Auto-generated DB schema notes (used by agent + query mode)
 ├── policy/
 │   └── admin-governance.json       # Governance rules (roles, workers, tools)
 ├── logs/
@@ -245,6 +289,11 @@ config/settings.json                # LLM + admin config
 | Generate | POST | `/setup/generate` | Generate agent draft |
 | Test | POST | `/setup/chat` | Test draft/live agent |
 | Promote | POST | `/setup/promote` | Promote draft to live |
+| Notes | POST | `/setup/agent/notes/regenerate` | Auto-generate data model notes from DB |
+| Notes | GET | `/setup/agent/notes?workspaceId=<id>` | Read data model notes |
+| Notes | POST | `/setup/agent/notes` | Manually edit data model notes |
+| Prompts | GET | `/setup/agent/prompts?workspaceId=<id>` | View all prompt guides |
+| Prompts | GET | `/setup/agent/prompts?id=<id>&workspaceId=<id>` | View single prompt guide |
 | Governance | POST | `/setup/governance/policy` | Update tool access |
 | Governance | GET | `/setup/governance` | View governance snapshot |
 | Workspaces | GET | `/setup/workspaces` | List all workspaces |

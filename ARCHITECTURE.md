@@ -26,13 +26,22 @@ Message ──► Sanitizer ──► Session Check ──► Intent Router ─�
 
 **File:** `gateway/sanitizer.js`
 
-Blocks malicious input before anything else runs.
+Multi-layered input validation with Unicode normalization. All input is NFKC-normalized and stripped of zero-width/control characters before pattern matching.
 
-| Check | What it catches |
-|---|---|
-| 13 regex patterns | Prompt injection (`ignore previous instructions`), path traversal (`../../`), command substitution (`$(cmd)`), script tags, eval/exec calls |
-| Length limit | Messages over 500 characters are rejected |
-| Empty input | Blank or whitespace-only messages |
+| Layer | Patterns | What it catches |
+|---|---|---|
+| Injection | 28 | Prompt injection, jailbreaks (DAN, developer mode, role manipulation), instruction extraction, bypass attempts |
+| Code execution | 16 | eval, exec, require, Function constructor, process.env, command substitution, prototype pollution |
+| Path traversal | 7 | `../`, `/etc/`, `/proc/`, `~/.ssh`, home directory access |
+| XSS | 10 | script/iframe/svg/img/embed tags, javascript: URIs, event handlers |
+| SQL injection | 11 | DROP/DELETE/UNION SELECT, OR 1=1, SQL comments, time-based injection, file exfiltration |
+
+Structural checks (no regex):
+- **Excessive repetition** — blocks 20+ repeated chars or 10+ repeated words (spam/fuzzing)
+- **Encoded payloads** — blocks base64 blobs (40+ chars), hex escape sequences, Unicode escape sequences
+- **Length limit** — messages over 500 characters are rejected
+
+Each layer returns a specific rejection reason (`injection_detected`, `code_exec_detected`, `path_traversal_detected`, `xss_detected`, `sql_injection_detected`, `excessive_repetition`, `encoded_payload_detected`) for audit logging.
 
 If blocked → returns `"Your message could not be processed."` — no LLM call, no tool call, no logging of the message content.
 
@@ -211,13 +220,15 @@ Question ──► Governance check (query_db) ──► Schema extraction ─�
 
 **Step 1 — Governance:** Checks `authorizeToolCall({ tool: "query_db", role, worker })` before any SQL runs.
 
-**Step 2 — Schema extraction:** `getDbSchema()` reads all table names, column types, and 2 sample rows from the database. This gives the LLM the actual structure and date formats.
+**Step 2 — Schema extraction:** `getDbSchema()` reads all table names, column types, and 2 sample rows from the database.
 
-**Step 3 — SQL generation:** Sends the schema + today's date (in both `YYYY-MM-DD` and `DD/MM/YYYY`) + the question to the LLM. Returns a raw `SELECT` query.
+**Step 3 — Data model notes:** Loads `data/workspaces/<id>/config/data-model-notes.md` — auto-generated notes about table purposes, date formats, dual-purpose tables, and gotchas. Injected into the SQL generation prompt so the LLM knows the schema without hardcoded hints.
 
-**Step 4 — Execution:** Runs the SQL against the database opened with `{ readonly: true }`. Only `SELECT` statements are executed — anything else triggers the fallback.
+**Step 4 — SQL generation:** Sends the schema + data model notes + today's date + the question to the LLM. Returns a raw `SELECT` query.
 
-**Step 5 — Summarisation:** Sends the raw rows back to the LLM with the original question for a human-friendly answer.
+**Step 5 — Execution:** Runs the SQL against the database opened with `{ readonly: true }`. Only `SELECT` statements are executed — anything else triggers the fallback.
+
+**Step 6 — Summarisation:** Sends the raw rows back to the LLM with the original question for a human-friendly answer.
 
 **Fallback:** If SQL generation fails or execution throws, falls back to a pre-computed business summary (today's orders, month/year revenue, expenses, active orders).
 
@@ -485,7 +496,7 @@ Now even reading the DB requires `super_admin` + explicit approval.
 
 | Layer | What it controls | Configured in | Applies to |
 |---|---|---|---|
-| Sanitizer | Blocks injection/malicious input | `gateway/sanitizer.js` (hardcoded) | Customer pipeline |
+| Sanitizer | Blocks injection/malicious input (72 patterns, 5 layers, Unicode normalization) | `gateway/sanitizer.js` (hardcoded) | Customer pipeline |
 | Policy engine | Allowed/restricted intents, domain keywords | `policy/policy.yml` (per workspace) | Customer pipeline |
 | Manifest | Intent → tool mapping, which tools exist | `agents/<slug>.yml` (per workspace) | Customer pipeline |
 | Governance — tool registration | Tool must exist in policy | `admin-governance.json` → `tools` | Admin pipeline |
@@ -503,6 +514,8 @@ Each business workspace is fully isolated:
 ```
 data/workspaces/<workspace-id>/
 ├── profile.json                    # Business profile (name, DB path, config)
+├── config/
+│   └── data-model-notes.md          # Auto-generated DB schema notes (used by agent + query mode)
 ├── policy/
 │   └── admin-governance.json       # Governance rules (roles, workers, tools)
 ├── logs/
@@ -521,7 +534,74 @@ Workspaces share the same server process but each has:
 - Its own FAQ knowledge base
 - Its own governance policy and audit log
 - Its own database path
+- Its own data model notes (auto-generated from DB schema)
 - Its own approval queue
+
+---
+
+## Prompt Guides & Data Model Notes
+
+### Data Model Notes
+
+**File:** `core/dataModelNotes.js`  
+**Storage:** `data/workspaces/<id>/config/data-model-notes.md`
+
+The admin agent and query mode SQL generator both need to understand the workspace's database schema. Instead of hardcoding schema hints per business, the system auto-introspects the database:
+
+```
+POST /setup/agent/notes/regenerate
+    │
+    ▼
+Read all tables, columns, types, defaults, row counts, 3 sample rows
+    │
+    ▼
+LLM generates concise data model notes:
+  - Table purposes
+  - Date format per column (detected from samples)
+  - Dual-purpose tables (e.g. expenses storing income)
+  - Foreign keys and relationships
+  - Enumerated values (statuses, types)
+  - Gotchas ("no separate income table")
+    │
+    ▼
+Cached to data/workspaces/<id>/config/data-model-notes.md
+```
+
+At runtime:
+- `adminAgent.js` loads notes into the system prompt as `DATA MODEL NOTES`
+- `admin.js` loads notes into the SQL generation prompt
+- If no notes file exists, those sections are simply omitted
+
+Fallback: If the LLM is unavailable during generation, a raw schema dump is saved instead.
+
+### Prompt Guides
+
+**File:** `core/promptGuides.js`
+
+Every LLM prompt in the system is inspectable via API:
+
+```
+GET /setup/agent/prompts?workspaceId=<id>
+```
+
+Returns 6 prompt guides, each rendered with the current workspace's context:
+
+| Guide ID | Source | What it controls |
+|---|---|---|
+| `admin-agent-system` | `gateway/adminAgent.js` | Core behaviour, tool list, browser rules, data model notes |
+| `admin-agent-task` | `gateway/adminAgent.js` | Worker roster, execution plan, step guidance |
+| `admin-planner` | `gateway/adminPlanner.js` | Plan generation before agent loop |
+| `admin-query-sql` | `gateway/admin.js` | SQL generation from natural language |
+| `customer-intent` | `gateway/intentParser.js` + `agents/*.yml` | Intent classification + filter extraction |
+| `customer-concierge` | `tools/businessChatTool.js` + `agents/*.yml` | Public-facing WhatsApp concierge |
+
+Each guide includes:
+- `id` — stable identifier for API filtering
+- `name` — human-readable label
+- `description` — what the prompt does
+- `source` — which file(s) contain the prompt
+- `editable` — how to change it (API endpoint, config file, or YAML manifest)
+- `prompt` — the full rendered prompt text the LLM actually receives
 
 ---
 
@@ -570,6 +650,9 @@ Governance: authorizeToolCall({ tool: "query_db", role }) ── blocked? ──
     │ allowed
     ▼
 getDbSchema() → table names, columns, 2 sample rows
+    │
+    ▼
+loadNotes(workspaceId) → data model notes (date formats, gotchas)
     │
     ▼
 LLM generates SELECT query

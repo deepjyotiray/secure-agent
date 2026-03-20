@@ -21,7 +21,7 @@ This project implements every concept LangChain provides — natively, in plain 
 
 | LangChain concept | Built-in implementation |
 |---|---|
-| Prompt templates | Inline in `intentParser.js`, `adminAgent.js`, `admin.js` |
+| Prompt templates | Inline in `intentParser.js`, `adminAgent.js`, `admin.js` — all inspectable via `GET /setup/agent/prompts` |
 | Chain composition | `agentChain.js` — manifest-driven agent chaining |
 | Tool calling | `executor.js` (customer) + `dispatchTool` in `adminAgent.js` (admin) |
 | Agent loop | `runAgentLoop` in `adminAgent.js` — 20-turn self-healing loop with OpenAI function calling |
@@ -79,7 +79,7 @@ Is it from the owner's phone?
 When a customer messages (via WhatsApp, HTTP API, or CLI), the message goes through a security pipeline before anything happens:
 
 **Step 1 — Sanitizer**
-Checks if the message looks like an attack. Things like `../../etc/passwd` or `<script>` get blocked immediately. Max 500 characters.
+Multi-layered input validation — 72 regex patterns across 5 categories (prompt injection, code execution, path traversal, XSS, SQL injection). Input is Unicode NFKC-normalized and stripped of zero-width characters before matching. Structural checks block repetition spam and encoded payloads. Max 500 characters.
 
 **Step 2 — Domain Gate**
 If the message is more than 3 words, it must contain food-related keywords. Someone asking about cricket scores gets dropped here without ever touching the LLM.
@@ -152,12 +152,30 @@ The workers are labels that control which tools are available at each step:
 
 Everything lives in one SQLite file on your Mac (`orders.db`). SQLite is just a single file that acts like a full database — no server needed.
 
-Tables inside it:
-- `orders` — every customer order ever placed, with status and payment info
-- `expenses` — your manual expense and income entries
-- `menu` — your food items and prices
-- `users` — customer accounts
-- `coupons` — discount codes
+The agent auto-discovers your schema. When you call `POST /setup/agent/notes/regenerate`, it introspects every table, column, date format, and quirk in your database and generates a `data-model-notes.md` file for the workspace. Both the admin agent and the query mode SQL generator read these notes at runtime — so the LLM always knows your data model without any hardcoded hints.
+
+You can also edit the notes manually via `POST /setup/agent/notes` if the auto-generated version misses something.
+
+### Prompt Guides
+
+Every LLM prompt in the system is inspectable via API:
+
+```
+GET /setup/agent/prompts
+```
+
+Returns all 6 prompt guides rendered with the current workspace's business name, workers, data model notes, and agent manifest config. Each guide includes the source file, what's editable, and the full prompt text the LLM actually receives.
+
+| Guide ID | What it controls |
+|---|---|
+| `admin-agent-system` | Core behaviour, tool list, browser rules, data model notes |
+| `admin-agent-task` | Worker roster, execution plan, step guidance |
+| `admin-planner` | Plan generation before agent loop |
+| `admin-query-sql` | SQL generation from natural language |
+| `customer-intent` | Intent classification + filter extraction |
+| `customer-concierge` | Public-facing WhatsApp concierge |
+
+Fetch a single guide: `GET /setup/agent/prompts?id=admin-agent-system`
 
 ---
 
@@ -185,7 +203,7 @@ Every inbound message passes through these gates before anything executes:
 Sanitizer → Domain Gate → Intent Parser (LLM) → Policy Engine → Manifest Resolver → Tool Executor
 ```
 
-1. **Sanitizer** — 13 regex patterns blocking prompt injection, path traversal, command substitution, script tags. Max 500 chars
+1. **Sanitizer** — 5-layer input validation: 72 regex patterns across injection, code execution, path traversal, XSS, and SQL injection categories. Unicode NFKC normalization + zero-width character stripping before pattern matching. Structural checks for repetition spam and encoded payloads. Max 500 chars
 2. **Domain gate** — messages over 3 words must match domain keywords before the LLM is invoked
 3. **Intent parser** — local LLM classifies the message into an intent from the manifest's `intents` list. Translator only — never sees the database, never calls tools
 4. **Policy engine** — YAML allowlist/blocklist. Restricted intents fall through to the next agent in the chain rather than hard-blocking
@@ -330,8 +348,13 @@ runtime/
   executor.js           # Manifest-driven tool dispatch
   sessionMemory.js      # 30-min per-phone conversation history
 
+core/
+  workspace.js          # Workspace isolation — paths, active workspace, migration
+  dataModelNotes.js     # Auto-introspect DB schema → LLM-generated data model notes per workspace
+  promptGuides.js       # Renders all 6 prompt guides for API inspection
+
 gateway/
-  sanitizer.js          # Input sanitization (13 patterns)
+  sanitizer.js          # 5-layer input sanitization (72 patterns + Unicode normalization)
   intentParser.js       # LLM intent classifier — generic, manifest-driven
   policyEngine.js       # Allowlist/blocklist enforcement
   adminAgent.js         # Admin agentic loop — 35+ tools, self-healing, 20-turn max
@@ -563,6 +586,46 @@ Body:
 
 ---
 
+### Prompt guides & data model notes
+
+**View all prompt guides**
+```
+GET /setup/agent/prompts?workspaceId=<id>
+```
+Returns all 6 prompt guides rendered with the workspace's context. Each guide includes `id`, `name`, `description`, `source`, `editable`, and the full `prompt` text.
+
+**View a single prompt guide**
+```
+GET /setup/agent/prompts?id=admin-agent-system&workspaceId=<id>
+```
+
+**Read data model notes**
+```
+GET /setup/agent/notes?workspaceId=<id>
+```
+
+**Update data model notes manually**
+```
+POST /setup/agent/notes
+Body:
+{
+  "workspaceId": "rays-home-kitchen",
+  "notes": "## Data Model Notes\n\n- expenses table stores both expenses and income..."
+}
+```
+
+**Auto-regenerate from DB schema**
+```
+POST /setup/agent/notes/regenerate
+Body:
+{
+  "workspaceId": "rays-home-kitchen"
+}
+```
+Introspects the workspace's database — tables, columns, sample rows, date formats — and asks the LLM to produce data model notes. Cached to `data/workspaces/<id>/config/data-model-notes.md`.
+
+---
+
 ### Internal send API (port 3001)
 
 Used by the agent's own tools to send WhatsApp messages and media back out. Not for external use, but useful for integration testing.
@@ -593,6 +656,9 @@ Body:
 | Customer message | POST | `{{base_url}}/message` | `x-secret: {{secret}}` | `{"phone":"919000000000","message":"show me the menu"}` |
 | Admin query | POST | `{{base_url}}/setup/admin/run` | — | `{"mode":"query","task":"how much did I make today"}` |
 | Admin agent | POST | `{{base_url}}/setup/admin/run` | — | `{"mode":"agent","task":"show unpaid orders"}` |
+| Prompt guides | GET | `{{base_url}}/setup/agent/prompts` | — | — |
+| Data model notes | GET | `{{base_url}}/setup/agent/notes` | — | — |
+| Regenerate notes | POST | `{{base_url}}/setup/agent/notes/regenerate` | — | `{"workspaceId":"rays-home-kitchen"}` |
 | Governance | GET | `{{base_url}}/governance` | `x-secret: {{secret}}` | — |
 | Approvals | GET | `{{base_url}}/governance/approvals` | `x-secret: {{secret}}` | — |
 | Approve | POST | `{{base_url}}/setup/approvals/approve` | — | `{"id":"apr-xxxx-xxxx"}` |
@@ -704,12 +770,15 @@ No code changes required.
 ## Security
 
 - LLM is sandboxed — it only sees what the pipeline explicitly feeds it. It cannot select tools, access databases, or run commands
+- 5-layer input sanitizer — 72 regex patterns (injection, code exec, path traversal, XSS, SQL injection) + Unicode normalization + structural checks for spam and encoded payloads
 - Admin channel works from one registered phone number + correct PIN (WhatsApp) or session cookie (HTTP API)
 - Shell execution uses a command prefix allowlist
 - Restricted intents fall through to the next agent — never hard-blocked from the customer's perspective
 - WhatsApp session keys (`auth/`) are never committed
 - All inter-service calls use a shared secret header (`x-secret`)
 - No business data (DB path, UPI handle, phone numbers) is hardcoded in runtime code
+- Data model notes are auto-generated per workspace from DB introspection — no hardcoded schema hints
+- All LLM prompts are inspectable via `GET /setup/agent/prompts` — full transparency into what the LLM receives
 - `tmp/`, `out/`, `.playwright-cli/` are gitignored — no runtime artifacts committed
 - Transport-agnostic pipeline — the same security gates apply whether the message arrives via WhatsApp, HTTP, or CLI
 

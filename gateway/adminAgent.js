@@ -13,6 +13,7 @@ const { authorizeToolCall, getGovernanceSnapshot } = require("./adminGovernance"
 const { createApprovalRequest } = require("./adminApprovals")
 const { getActiveWorkspace } = require("../core/workspace")
 const { loadProfile } = require("../setup/profileService")
+const { loadNotes } = require("../core/dataModelNotes")
 const {
     createTaskState,
     appendToolCall,
@@ -1012,7 +1013,9 @@ BROWSER AUTOMATION RULES — ALWAYS FOLLOW:
    Step 6: close_browser
    Step 7: youtube_play → url: "<URL from step 5 or click result>"
    DONE. youtube_play opens Chrome and starts playback automatically. Never use mac_automation for YouTube.
-AVAILABLE TOOLS: run_shell, mac_automation, query_db, add_expense, update_order, send_whatsapp, http_request, load_test, recon, server_health, open_browser, open_in_chrome, chrome_js, navigate, screenshot, click, type_text, press_key, read_page, scrape_page, scroll, wait_for_element, get_current_url, close_browser, get_dom, type_by_index, click_by_index, write_file, read_file, npm_install, run_node, list_tools, list_governance, run_skill`
+AVAILABLE TOOLS: run_shell, mac_automation, query_db, add_expense, update_order, send_whatsapp, http_request, load_test, recon, server_health, open_browser, open_in_chrome, chrome_js, navigate, screenshot, click, type_text, press_key, read_page, scrape_page, scroll, wait_for_element, get_current_url, close_browser, get_dom, type_by_index, click_by_index, write_file, read_file, npm_install, run_node, list_tools, list_governance, run_skill
+
+${(() => { const notes = loadNotes(workspaceId); return notes ? "DATA MODEL NOTES (auto-generated for this workspace):\n" + notes : "" })()}`
         },
         {
             role: "system",

@@ -9,6 +9,7 @@ const { approveRequest, listApprovals } = require("./adminApprovals")
 const { authorizeToolCall } = require("./adminGovernance")
 const { getActiveWorkspace } = require("../core/workspace")
 const { loadProfile } = require("../setup/profileService")
+const { loadNotes } = require("../core/dataModelNotes")
 const logger = require("./logger")
 
 const DB_PATH = settings.admin.db_path
@@ -182,15 +183,14 @@ async function queryWithLlm(question, dbContext, workspaceId) {
     const yyyy = now.getFullYear()
 
     // Step 1: generate SQL
+    const notes = loadNotes(workspaceId)
     const sqlPrompt = `You are a SQLite expert for ${businessName}.
 Today is ${yyyy}-${mm}-${dd} (also ${dd}/${mm}/${yyyy} in DD/MM/YYYY format).
 
 Database schema:
 ${schema}
-
+${notes ? `\nData model notes:\n${notes}\n` : ""}
 IMPORTANT:
-- expenses.entry_date uses DD/MM/YYYY format (e.g. "${dd}/${mm}/${yyyy}")
-- orders.order_date and orders.order_for use YYYY-MM-DD format
 - Write a single read-only SELECT query to answer the question
 - Return ONLY the raw SQL, no explanation, no markdown fences
 

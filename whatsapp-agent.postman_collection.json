@@ -1,13 +1,22 @@
 {
   "info": {
     "name": "secure-agent",
-    "description": "Complete API reference for the secure-agent server.\n\n**Auth**: Most endpoints require the `x-secret` header matching `api.secret` in `config/settings.json`.\n\n**Variables**:\n- `base_url` — HTTP transport (default: `http://127.0.0.1:3010`)\n- `internal_url` — Internal send API (default: `http://127.0.0.1:3001`)\n- `secret` — Value of `api.secret` from `config/settings.json`\n\n**Transports**: The HTTP API runs alongside any transport (WhatsApp, CLI). All endpoints work regardless of which transport is active.\n\n**Folders**:\n1. **Setup auth** — Login/logout for session cookie\n2. **Workspace management** — Profiles, drafts, promotion\n3. **Setup chat** — Test draft/live agent\n4. **Utility** — Health, capabilities, governance, approvals, workers\n5. **Customer pipeline** — Simulate customer messages\n6. **Agent management** — Hot-edit intents and tools\n7. **Admin — query** — Natural language DB queries\n8. **Admin — agent** — Full agentic tasks\n9. **Internal send API** — Push outbound messages",
+    "description": "Complete API reference for the secure-agent server.\n\n**Auth**: Most endpoints require the `x-secret` header matching `api.secret` in `config/settings.json`.\n\n**Variables**:\n- `base_url` \u2014 HTTP transport (default: `http://127.0.0.1:3010`)\n- `internal_url` \u2014 Internal send API (default: `http://127.0.0.1:3001`)\n- `secret` \u2014 Value of `api.secret` from `config/settings.json`\n\n**Transports**: The HTTP API runs alongside any transport (WhatsApp, CLI). All endpoints work regardless of which transport is active.\n\n**Folders**:\n1. **Setup auth** \u2014 Login/logout for session cookie\n2. **Workspace management** \u2014 Profiles, drafts, promotion\n3. **Setup chat** \u2014 Test draft/live agent\n4. **Utility** \u2014 Health, capabilities, governance, approvals, workers\n5. **Customer pipeline** \u2014 Simulate customer messages\n6. **Agent management** \u2014 Hot-edit intents and tools\n7. **Admin \u2014 query** \u2014 Natural language DB queries\n8. **Admin \u2014 agent** \u2014 Full agentic tasks\n9. **Internal send API** \u2014 Push outbound messages",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base_url",      "value": "http://127.0.0.1:3010" },
-    { "key": "internal_url", "value": "http://127.0.0.1:3001" },
-    { "key": "secret",       "value": "45f7d14025261b692ba5eb8254d46cd22a8e20b892701fdf" }
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:3010"
+    },
+    {
+      "key": "internal_url",
+      "value": "http://127.0.0.1:3001"
+    },
+    {
+      "key": "secret",
+      "value": "45f7d14025261b692ba5eb8254d46cd22a8e20b892701fdf"
+    }
   ],
   "item": [
     {
@@ -19,9 +28,17 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/login",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"username\": \"linkedin\",\n  \"password\": \"community\"\n}" },
-            "description": "Returns a `secureai_session` cookie (12 h TTL). Postman stores it automatically — subsequent /setup/* requests will include it. Run this once before using any Admin or Setup endpoint."
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"linkedin\",\n  \"password\": \"community\"\n}"
+            },
+            "description": "Returns a `secureai_session` cookie (12 h TTL). Postman stores it automatically \u2014 subsequent /setup/* requests will include it. Run this once before using any Admin or Setup endpoint."
           }
         },
         {
@@ -36,7 +53,7 @@
     },
     {
       "name": "Workspace management",
-      "description": "Manage workspaces — list, switch, load/save profiles, generate agent drafts, and promote drafts to live.",
+      "description": "Manage workspaces \u2014 list, switch, load/save profiles, generate agent drafts, and promote drafts to live.",
       "item": [
         {
           "name": "List workspaces",
@@ -51,8 +68,16 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/workspace/select",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"workspaceId\": \"default\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"default\"\n}"
+            },
             "description": "Switches the active workspace. All subsequent requests without an explicit workspaceId will use this one."
           }
         },
@@ -69,8 +94,16 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/profile",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"businessName\": \"Ray's Home Kitchen\",\n  \"cuisine\": \"home-style Indian food\",\n  \"tone\": \"warm, sharp, and naturally business-aware\",\n  \"dbPath\": \"/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db\",\n  \"workspaceId\": \"default\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"businessName\": \"Ray's Home Kitchen\",\n  \"cuisine\": \"home-style Indian food\",\n  \"tone\": \"warm, sharp, and naturally business-aware\",\n  \"dbPath\": \"/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db\",\n  \"workspaceId\": \"default\"\n}"
+            },
             "description": "Saves the workspace profile. All fields are merged into the existing profile. Include `workspaceId` to target a specific workspace."
           }
         },
@@ -79,8 +112,16 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/generate",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"businessName\": \"Ray's Home Kitchen\",\n  \"cuisine\": \"home-style Indian food\",\n  \"tone\": \"warm, sharp, and naturally business-aware\",\n  \"dbPath\": \"/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db\",\n  \"workspaceId\": \"default\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"businessName\": \"Ray's Home Kitchen\",\n  \"cuisine\": \"home-style Indian food\",\n  \"tone\": \"warm, sharp, and naturally business-aware\",\n  \"dbPath\": \"/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db\",\n  \"workspaceId\": \"default\"\n}"
+            },
             "description": "Saves the profile then generates a full agent draft (manifest, FAQ, policy files). Returns the generated intent names, FAQ topics, and keyword count. Does NOT go live until you call Promote."
           }
         },
@@ -89,8 +130,16 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/promote",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"workspaceId\": \"default\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"default\"\n}"
+            },
             "description": "Copies draft files to the live agent config. The agent will reload with the new manifest, FAQ, and policy on next request."
           }
         }
@@ -105,8 +154,16 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/chat",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"hi\",\n  \"workspaceId\": \"default\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"hi\",\n  \"workspaceId\": \"default\"\n}"
+            },
             "description": "Sends a test message. Response includes `source: 'draft'` or `source: 'live'` so you know which agent handled it."
           }
         }
@@ -137,8 +194,13 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/governance",
-            "header": [{ "key": "x-secret", "value": "{{secret}}" }],
-            "description": "Full governance policy dump — role, all tool policies (category, risk, approval mode, mutating flag), and worker allowlists. Requires x-secret."
+            "header": [
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              }
+            ],
+            "description": "Full governance policy dump \u2014 role, all tool policies (category, risk, approval mode, mutating flag), and worker allowlists. Requires x-secret."
           }
         },
         {
@@ -146,7 +208,12 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/governance/approvals",
-            "header": [{ "key": "x-secret", "value": "{{secret}}" }],
+            "header": [
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              }
+            ],
             "description": "Lists all tool calls currently blocked and waiting for manual approval. Returns array of `{ id, tool, args, requestedAt }`. Requires x-secret."
           }
         },
@@ -155,7 +222,12 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/approvals/approve",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"id\": \"apr-xxxx-xxxx\"\n}"
@@ -168,12 +240,17 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/governance/policy",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"tools\": {\n    \"query_db\": {\n      \"category\": \"data\",\n      \"risk\": \"low\",\n      \"mutating\": false,\n      \"approval\": \"none\",\n      \"roles\": [\"super_admin\", \"system_admin\"]\n    }\n  }\n}"
             },
-            "description": "Merges partial updates into admin-governance.json. Pass only the keys you want to change — `tools`, `roles`, `workers`, or `defaultRole`. Example: remove observer from query_db access. Requires setup session cookie."
+            "description": "Merges partial updates into admin-governance.json. Pass only the keys you want to change \u2014 `tools`, `roles`, `workers`, or `defaultRole`. Example: remove observer from query_db access. Requires setup session cookie."
           }
         },
         {
@@ -181,7 +258,12 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/governance/policy",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"tools\": {\n    \"query_db\": {\n      \"category\": \"data\",\n      \"risk\": \"low\",\n      \"mutating\": false,\n      \"approval\": \"none\",\n      \"roles\": [\"observer\", \"operator\", \"super_admin\", \"system_admin\"]\n    }\n  }\n}"
@@ -201,7 +283,7 @@
     },
     {
       "name": "Customer pipeline",
-      "description": "Simulate inbound customer messages via the HTTP API. The agent runs the full pipeline: sanitize → intent route → tool execute. Use a real phone number format (e.g. 919XXXXXXXXX). The same pipeline runs regardless of transport (WhatsApp, HTTP, CLI).",
+      "description": "Simulate inbound customer messages via the HTTP API. The agent runs the full pipeline: sanitize \u2192 intent route \u2192 tool execute. Use a real phone number format (e.g. 919XXXXXXXXX). The same pipeline runs regardless of transport (WhatsApp, HTTP, CLI).",
       "item": [
         {
           "name": "Greet",
@@ -209,11 +291,20 @@
             "method": "POST",
             "url": "{{base_url}}/message",
             "header": [
-              { "key": "x-secret", "value": "{{secret}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"hi\"\n}" },
-            "description": "Triggers the `greet` intent → `concierge` tool. Good first test to confirm the agent is responding."
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"hi\"\n}"
+            },
+            "description": "Triggers the `greet` intent \u2192 `concierge` tool. Good first test to confirm the agent is responding."
           }
         },
         {
@@ -222,11 +313,20 @@
             "method": "POST",
             "url": "{{base_url}}/message",
             "header": [
-              { "key": "x-secret", "value": "{{secret}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"show me the menu\"\n}" },
-            "description": "Triggers the `show_menu` intent → `rag_menu` tool. Queries the menu table in orders.db and returns formatted results."
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"show me the menu\"\n}"
+            },
+            "description": "Triggers the `show_menu` intent \u2192 `rag_menu` tool. Queries the menu table in orders.db and returns formatted results."
           }
         },
         {
@@ -235,11 +335,20 @@
             "method": "POST",
             "url": "{{base_url}}/message",
             "header": [
-              { "key": "x-secret", "value": "{{secret}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"what is my order status\"\n}" },
-            "description": "Triggers the `order_status` intent → `order_lookup` tool. Looks up orders by phone number."
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"what is my order status\"\n}"
+            },
+            "description": "Triggers the `order_status` intent \u2192 `order_lookup` tool. Looks up orders by phone number."
           }
         },
         {
@@ -248,11 +357,20 @@
             "method": "POST",
             "url": "{{base_url}}/message",
             "header": [
-              { "key": "x-secret", "value": "{{secret}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"I want to order 2 dal makhani\"\n}" },
-            "description": "Triggers the `place_order` intent → `order_create` tool. Starts a cart session for the phone number."
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"I want to order 2 dal makhani\"\n}"
+            },
+            "description": "Triggers the `place_order` intent \u2192 `order_create` tool. Starts a cart session for the phone number."
           }
         },
         {
@@ -261,11 +379,20 @@
             "method": "POST",
             "url": "{{base_url}}/message",
             "header": [
-              { "key": "x-secret", "value": "{{secret}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"my order was wrong\"\n}" },
-            "description": "Triggers the `support` intent → `support_faq` tool. Shows the support menu and escalation options."
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"my order was wrong\"\n}"
+            },
+            "description": "Triggers the `support` intent \u2192 `support_faq` tool. Shows the support menu and escalation options."
           }
         },
         {
@@ -274,11 +401,20 @@
             "method": "POST",
             "url": "{{base_url}}/message",
             "header": [
-              { "key": "x-secret", "value": "{{secret}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"what's a good dish for a rainy day?\"\n}" },
-            "description": "Triggers the `general_chat` intent → `concierge` tool. Business-aware small talk and recommendations."
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"919000000000\",\n  \"message\": \"what's a good dish for a rainy day?\"\n}"
+            },
+            "description": "Triggers the `general_chat` intent \u2192 `concierge` tool. Business-aware small talk and recommendations."
           }
         }
       ]
@@ -292,7 +428,12 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/agent/intents",
-            "header": [{ "key": "x-secret", "value": "{{secret}}" }],
+            "header": [
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              }
+            ],
             "description": "Returns all intents with full detail: `name`, `tool`, `auth_required`, and `hint` (the routing hint shown to the LLM classifier). Use this to audit what the agent can currently handle."
           }
         },
@@ -301,7 +442,12 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/agent/intents/show_menu",
-            "header": [{ "key": "x-secret", "value": "{{secret}}" }],
+            "header": [
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              }
+            ],
             "description": "Returns full detail for one intent by name. Returns 404 if not found. Change `show_menu` in the URL to any intent name."
           }
         },
@@ -311,14 +457,20 @@
             "method": "POST",
             "url": "{{base_url}}/agent/intents",
             "header": [
-              { "key": "x-secret", "value": "{{secret}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"track_delivery\",\n  \"tool\": \"order_lookup\",\n  \"auth_required\": false,\n  \"hint\": \"customer asks where their delivery is or wants live tracking\"\n}"
             },
-            "description": "Adds a new intent to the live manifest. `name` and `tool` are required. `tool` must already exist in the tools section. `hint` is the routing hint shown to the LLM classifier — write it as a natural language description of when this intent should fire."
+            "description": "Adds a new intent to the live manifest. `name` and `tool` are required. `tool` must already exist in the tools section. `hint` is the routing hint shown to the LLM classifier \u2014 write it as a natural language description of when this intent should fire."
           }
         },
         {
@@ -326,7 +478,12 @@
           "request": {
             "method": "DELETE",
             "url": "{{base_url}}/agent/intents/track_delivery",
-            "header": [{ "key": "x-secret", "value": "{{secret}}" }],
+            "header": [
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              }
+            ],
             "description": "Removes an intent from the live manifest by name. Returns 400 if the intent doesn't exist. Change `track_delivery` in the URL to the intent you want to remove."
           }
         },
@@ -335,7 +492,12 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/agent/tools",
-            "header": [{ "key": "x-secret", "value": "{{secret}}" }],
+            "header": [
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              }
+            ],
             "description": "Returns all tools with their full config: `name`, `type`, and all type-specific fields (db_path, system_prompt, escalation_phone, etc.). Use this to see exactly what each tool is configured with."
           }
         },
@@ -344,18 +506,29 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/agent/tools/rag_menu",
-            "header": [{ "key": "x-secret", "value": "{{secret}}" }],
+            "header": [
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              }
+            ],
             "description": "Returns full config for one tool by name. Returns 404 if not found. Change `rag_menu` in the URL to any tool name."
           }
         },
         {
-          "name": "Add tool — rag",
+          "name": "Add tool \u2014 rag",
           "request": {
             "method": "POST",
             "url": "{{base_url}}/agent/tools",
             "header": [
-              { "key": "x-secret", "value": "{{secret}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -365,13 +538,19 @@
           }
         },
         {
-          "name": "Add tool — support",
+          "name": "Add tool \u2014 support",
           "request": {
             "method": "POST",
             "url": "{{base_url}}/agent/tools",
             "header": [
-              { "key": "x-secret", "value": "{{secret}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -381,13 +560,19 @@
           }
         },
         {
-          "name": "Add tool — sqlite (order lookup)",
+          "name": "Add tool \u2014 sqlite (order lookup)",
           "request": {
             "method": "POST",
             "url": "{{base_url}}/agent/tools",
             "header": [
-              { "key": "x-secret", "value": "{{secret}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -397,13 +582,19 @@
           }
         },
         {
-          "name": "Add tool — business_chat (concierge)",
+          "name": "Add tool \u2014 business_chat (concierge)",
           "request": {
             "method": "POST",
             "url": "{{base_url}}/agent/tools",
             "header": [
-              { "key": "x-secret", "value": "{{secret}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -417,23 +608,172 @@
           "request": {
             "method": "DELETE",
             "url": "{{base_url}}/agent/tools/rag_offers",
-            "header": [{ "key": "x-secret", "value": "{{secret}}" }],
-            "description": "Removes a tool from the live manifest by name. Returns 400 if the tool doesn't exist. Note: intents pointing to this tool will break — delete or update those intents first. Change `rag_offers` in the URL to the tool you want to remove."
+            "header": [
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              }
+            ],
+            "description": "Removes a tool from the live manifest by name. Returns 400 if the tool doesn't exist. Note: intents pointing to this tool will break \u2014 delete or update those intents first. Change `rag_offers` in the URL to the tool you want to remove."
           }
         }
       ]
     },
     {
-      "name": "Admin — query",
-      "description": "Natural language queries against the orders.db database. Runs in `query` mode — LLM generates SQL dynamically from the DB schema, executes it (read-only), and summarises the results.\n\nGovernance: checked against the `query_db` tool policy. Pass `role` in the body to test different access levels (defaults to super_admin).\n\nRequires setup session cookie (run Login first).",
+      "name": "Agent notes",
+      "item": [
+        {
+          "name": "Get all prompt guides",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/setup/agent/prompts?workspaceId={{workspace_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "setup",
+                "agent",
+                "prompts"
+              ],
+              "query": [
+                {
+                  "key": "workspaceId",
+                  "value": "{{workspace_id}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get single prompt guide",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/setup/agent/prompts?workspaceId={{workspace_id}}&id=admin-agent-system",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "setup",
+                "agent",
+                "prompts"
+              ],
+              "query": [
+                {
+                  "key": "workspaceId",
+                  "value": "{{workspace_id}}"
+                },
+                {
+                  "key": "id",
+                  "value": "admin-agent-system"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get data model notes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/setup/agent/notes?workspaceId={{workspace_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "setup",
+                "agent",
+                "notes"
+              ],
+              "query": [
+                {
+                  "key": "workspaceId",
+                  "value": "{{workspace_id}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update data model notes",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspace_id}}\",\n  \"notes\": \"## Data Model Notes\\n\\n- The expenses table stores BOTH expenses AND income.\\n- entry_date uses DD/MM/YYYY format.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/setup/agent/notes",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "setup",
+                "agent",
+                "notes"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Regenerate data model notes",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workspaceId\": \"{{workspace_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/setup/agent/notes/regenerate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "setup",
+                "agent",
+                "notes",
+                "regenerate"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin \u2014 query",
+      "description": "Natural language queries against the orders.db database. Runs in `query` mode \u2014 LLM generates SQL dynamically from the DB schema, executes it (read-only), and summarises the results.\n\nGovernance: checked against the `query_db` tool policy. Pass `role` in the body to test different access levels (defaults to super_admin).\n\nRequires setup session cookie (run Login first).",
       "item": [
         {
           "name": "How much did I make today",
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/admin/run",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"how much did I make today\",\n  \"role\": \"super_admin\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"how much did I make today\",\n  \"role\": \"super_admin\"\n}"
+            },
             "description": "Sums today's revenue from the orders table. LLM generates SQL dynamically against the DB."
           }
         },
@@ -442,8 +782,16 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/admin/run",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"which orders are unpaid\",\n  \"role\": \"super_admin\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"which orders are unpaid\",\n  \"role\": \"super_admin\"\n}"
+            },
             "description": "Lists all orders with payment_status != paid."
           }
         },
@@ -452,8 +800,16 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/admin/run",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"how much profit this month\",\n  \"role\": \"super_admin\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"how much profit this month\",\n  \"role\": \"super_admin\"\n}"
+            },
             "description": "Calculates income minus expenses for the current month from the expenses table."
           }
         },
@@ -462,8 +818,16 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/admin/run",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"show today's active orders\",\n  \"role\": \"super_admin\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"show today's active orders\",\n  \"role\": \"super_admin\"\n}"
+            },
             "description": "Lists orders placed today that are not yet delivered or cancelled."
           }
         },
@@ -472,8 +836,16 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/admin/run",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"overall revenue this year\",\n  \"role\": \"super_admin\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"overall revenue this year\",\n  \"role\": \"super_admin\"\n}"
+            },
             "description": "Total revenue from all paid orders in the current calendar year."
           }
         },
@@ -482,8 +854,16 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/admin/run",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"what are the top 5 selling items this month\",\n  \"role\": \"super_admin\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"what are the top 5 selling items this month\",\n  \"role\": \"super_admin\"\n}"
+            },
             "description": "Ranks menu items by order frequency for the current month."
           }
         },
@@ -492,34 +872,58 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/admin/run",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"show all expenses this week\",\n  \"role\": \"super_admin\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"show all expenses this week\",\n  \"role\": \"super_admin\"\n}"
+            },
             "description": "Lists all expense entries from the expenses table for the current week. Dates are stored as DD/MM/YYYY."
           }
         },
         {
-          "name": "Expenses today (observer — blocked)",
+          "name": "Expenses today (observer \u2014 blocked)",
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/admin/run",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"show expenses today\",\n  \"role\": \"observer\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"query\",\n  \"task\": \"show expenses today\",\n  \"role\": \"observer\"\n}"
+            },
             "description": "Demonstrates governance: if observer is removed from query_db roles in admin-governance.json, this request will be blocked with a reason."
           }
         }
       ]
     },
     {
-      "name": "Admin — agent",
-      "description": "Full agentic tasks. Runs in `agent` mode — uses the admin agent loop with 35+ tools, governance, and self-healing. Use this for mutations, system tasks, and multi-step operations.\n\nPrefix your task with `agent` or just write it naturally — the server prepends `agent` automatically in agent mode.",
+      "name": "Admin \u2014 agent",
+      "description": "Full agentic tasks. Runs in `agent` mode \u2014 uses the admin agent loop with 35+ tools, governance, and self-healing. Use this for mutations, system tasks, and multi-step operations.\n\nPrefix your task with `agent` or just write it naturally \u2014 the server prepends `agent` automatically in agent mode.",
       "item": [
         {
           "name": "pm2 status",
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/admin/run",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"pm2 status\",\n  \"role\": \"super_admin\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"pm2 status\",\n  \"role\": \"super_admin\"\n}"
+            },
             "description": "Runs `pm2 list` via the shell tool and returns process status. Good first test for the agent loop."
           }
         },
@@ -528,8 +932,16 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/admin/run",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"show unpaid orders from this week\",\n  \"role\": \"super_admin\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"show unpaid orders from this week\",\n  \"role\": \"super_admin\"\n}"
+            },
             "description": "Agent queries the DB and formats a list of unpaid orders."
           }
         },
@@ -538,9 +950,17 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/admin/run",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"mark order ORD-123 as delivered\",\n  \"role\": \"super_admin\"\n}" },
-            "description": "Mutating operation — agent updates the order status in the DB. Governed by admin-governance.json (low risk, no approval needed)."
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"mark order ORD-123 as delivered\",\n  \"role\": \"super_admin\"\n}"
+            },
+            "description": "Mutating operation \u2014 agent updates the order status in the DB. Governed by admin-governance.json (low risk, no approval needed)."
           }
         },
         {
@@ -548,8 +968,16 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/admin/run",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"add expense: vegetables 450 rupees today\",\n  \"role\": \"super_admin\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"add expense: vegetables 450 rupees today\",\n  \"role\": \"super_admin\"\n}"
+            },
             "description": "Agent uses the `add_expense` tool to insert a row into the expenses table. Date stored as DD/MM/YYYY."
           }
         },
@@ -558,9 +986,17 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/admin/run",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"recon https://healthymealspot.com\",\n  \"role\": \"super_admin\"\n}" },
-            "description": "Agent fetches the website and summarises what it finds — useful for checking if the site is live and what it shows."
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"recon https://healthymealspot.com\",\n  \"role\": \"super_admin\"\n}"
+            },
+            "description": "Agent fetches the website and summarises what it finds \u2014 useful for checking if the site is live and what it shows."
           }
         },
         {
@@ -568,8 +1004,16 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/admin/run",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"tail -n 50 logs/agent.log\",\n  \"role\": \"super_admin\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"tail -n 50 logs/agent.log\",\n  \"role\": \"super_admin\"\n}"
+            },
             "description": "Agent runs the shell command and returns the last 50 lines of the agent log."
           }
         },
@@ -578,8 +1022,16 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/admin/run",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"apply coupon SAVE10 to order ORD-456\",\n  \"role\": \"super_admin\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"agent\",\n  \"task\": \"apply coupon SAVE10 to order ORD-456\",\n  \"role\": \"super_admin\"\n}"
+            },
             "description": "Agent looks up the coupon in the coupons table and applies it to the specified order."
           }
         },
@@ -588,8 +1040,16 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/setup/admin/image",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"image\": \"<base64-encoded-image>\",\n  \"caption\": \"today's grocery bill\",\n  \"workspaceId\": \"default\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"image\": \"<base64-encoded-image>\",\n  \"caption\": \"today's grocery bill\",\n  \"workspaceId\": \"default\"\n}"
+            },
             "description": "Sends a base64-encoded image (e.g. a grocery receipt) to the vision LLM. It extracts expense/income entries and inserts them directly into the expenses table. Returns the list of added entries."
           }
         }
@@ -597,7 +1057,7 @@
     },
     {
       "name": "Internal send API",
-      "description": "Push outbound messages directly to a phone number. Runs on the internal port (3001) — not exposed publicly. Requires x-secret.",
+      "description": "Push outbound messages directly to a phone number. Runs on the internal port (3001) \u2014 not exposed publicly. Requires x-secret.",
       "item": [
         {
           "name": "Send WhatsApp message",
@@ -605,8 +1065,14 @@
             "method": "POST",
             "url": "{{internal_url}}/send",
             "header": [
-              { "key": "x-secret", "value": "{{secret}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "x-secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
