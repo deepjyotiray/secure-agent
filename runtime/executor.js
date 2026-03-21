@@ -4,11 +4,15 @@ const logger = require("../gateway/logger")
 
 // built-in tool types — always available, eagerly loaded
 const CORE_TOOLS = {
-    business_chat: require("../tools/businessChatTool"),
-    rag:          require("../tools/ragTool"),
-    sqlite:       require("../tools/sqliteTool"),
-    support:      require("../tools/supportTool"),
-    order_create: require("../tools/orderCreateTool"),
+    business_chat:   require("../tools/businessChatTool"),
+
+    // generic core types — domain-agnostic, no business-specific logic
+    sqlite:          require("../tools/sqliteQueryTool"),
+    rag:             require("../tools/genericRagTool"),
+    support:         require("../tools/genericSupportTool"),
+    sqlite_query:    require("../tools/sqliteQueryTool"),
+    rag_generic:     require("../tools/genericRagTool"),
+    support_generic: require("../tools/genericSupportTool"),
 }
 
 // domain-pack tool types — registered at runtime

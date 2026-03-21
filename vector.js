@@ -3,7 +3,7 @@
 const Database = require("better-sqlite3")
 const lancedb = require("@lancedb/lancedb")
 
-const DB_PATH = "/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db"
+const DB_PATH = process.env.DB_PATH || "./data/orders.db"
 const VECTOR_DIM = 384
 
 function buildChunks(db) {
@@ -75,7 +75,7 @@ function buildChunks(db) {
         id: "general",
         type: "info",
         keywords: "order place how website delivery contact",
-        text: `Ray's Home Kitchen — Fresh home-cooked meals delivered to you.\n\nTo place an order visit: https://healthymealspot.com\nFor help, reply with "help" or "menu".`
+        text: `Your Business — Products and services.\n\nTo place an order visit your website.\nFor help, reply with "help" or "menu".`
     })
 
     return chunks

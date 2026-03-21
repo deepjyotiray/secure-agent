@@ -13,6 +13,9 @@ vectordb/
 # Runtime data
 data/
 
+# Postman collection (may contain secrets)
+*.postman_collection.json
+
 # Dependencies
 node_modules/
 

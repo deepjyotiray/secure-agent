@@ -75,4 +75,4 @@ tools:
     faq_path: "./agents/support/faq.yml"
     db_path: "./data/medical-clinic.db"
     business_name: "Medical Clinic"
-    escalation_phone: "919594614752"
+    escalation_phone: "91XXXXXXXXXX"

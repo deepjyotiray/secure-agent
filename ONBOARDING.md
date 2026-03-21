@@ -1,322 +1,390 @@
-# Onboarding a New Business
+# Setting Up Your Restaurant on the Secure Agent
 
-This guide walks through onboarding a new business onto the secure-agent platform. Each business gets its own isolated workspace with a dedicated agent manifest, FAQ, governance policy, and database.
+This guide walks you through setting up a restaurant business from scratch on the secure-agent platform. By the end, you'll have a WhatsApp bot that can show your menu, take orders, look up order status, handle support, and let you run admin queries — all through WhatsApp.
+
+---
+
+## What You're Setting Up
+
+Three servers work together:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        YOUR RESTAURANT                          │
+│                                                                 │
+│  ray-orders-backend (:3000)     secure-agent (:3001 + :3010)    │
+│  ┌──────────────────────┐      ┌────────────────────────────┐   │
+│  │ SQLite DB (orders,   │◄────►│ WhatsApp bot (Baileys)     │   │
+│  │ menu, users, coupons)│      │ AI intent classification   │   │
+│  │ Admin panel (/admin) │      │ Menu RAG, order flow,      │   │
+│  │ Order CRUD API       │      │ support escalation         │   │
+│  │ Invoice/receipt gen  │      │ Admin agent (35+ tools)    │   │
+│  └──────────────────────┘      │ Control Panel UI           │   │
+│                                └────────────────────────────┘   │
+│                                         │                       │
+│                                    WhatsApp Cloud               │
+│                                    (Baileys P2P)                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+- **ray-orders-backend** — your database, menu management, order processing, admin panel
+- **secure-agent** — the AI brain: WhatsApp connection, intent routing, menu search, ordering flow, support, admin agent
+
+The secure-agent reads from the same SQLite database that the orders backend writes to.
+
+---
 
 ## Prerequisites
 
-- The secure-agent server is running (`node index.js`)
-- An OpenAI API key for agent generation
-- A SQLite database for the business (or let the generator create one)
+- Node.js 18+
+- An OpenAI API key (for intent classification and chat responses)
+- A WhatsApp account (you'll scan a QR code to link it)
+- The orders backend already has menu data in its SQLite DB
 
-## Step 1 — Login
+---
 
-Get a session cookie. All `/setup/*` endpoints require it.
+## Step 1 — Set Up the Orders Backend
 
-```
-POST /setup/login
-{
-  "username": "linkedin",
-  "password": "community"
-}
+```bash
+cd ray-orders-backend
 ```
 
-Response sets a `secureai_session` cookie (12h TTL). Postman stores it automatically.
-
-## Step 2 — Save the business profile
-
-```
-POST /setup/profile
-{
-  "businessName": "Bloom Flower Shop",
-  "businessType": "flower delivery",
-  "brandVoice": "cheerful and helpful",
-  "website": "https://bloomflowers.com",
-  "countryCode": "91",
-  "currency": "₹",
-  "contactPhone": "+919000000000",
-  "offerings": "bouquets, single stems, event arrangements, subscriptions",
-  "fulfillmentMode": "delivery and pickup",
-  "faqSeed": "delivery time, wilting policy, custom arrangements",
-  "supportPolicy": "refund within 24h if flowers arrive damaged",
-  "adminPhone": "919000000000",
-  "adminPin": "1234",
-  "openaiKey": "<your-openai-key>",
-  "dbPath": "/path/to/bloom.db",
-  "escalationPhone": "+919000000000",
-  "workspaceId": "bloom-flower-shop"
-}
+Create `.env`:
+```env
+SESSION_SECRET=<generate: node -e "console.log(require('crypto').randomBytes(48).toString('hex'))">
+ADMIN_API_KEY=<generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))">
+WHATSAPP_AGENT_SECRET=<pick a strong secret — you'll reuse this in the agent>
 ```
 
-This creates:
-- `data/workspaces/bloom-flower-shop/profile.json`
-- Sets `bloom-flower-shop` as the active workspace
-
-### Profile fields
-
-| Field | Purpose |
-|---|---|
-| `businessName` | Used in agent prompts, FAQ, and greetings |
-| `businessType` | Helps the generator understand the domain |
-| `brandVoice` | Tone of the agent's responses |
-| `website` | Scraped during generation for additional context |
-| `offerings` | Products/services — drives intent and tool generation |
-| `faqSeed` | Comma-separated topics to seed the FAQ knowledge base |
-| `supportPolicy` | Refund/complaint handling rules baked into the support agent |
-| `adminPhone` | Phone number that gets admin access via WhatsApp or is used for caller identification |
-| `adminPin` | PIN required alongside the admin keyword |
-| `openaiKey` | Used for generation and the admin agent loop |
-| `dbPath` | Absolute path to the business's SQLite database |
-| `escalationPhone` | Where human escalations are sent |
-| `scrapeWebsite` | `true` (default) — scrapes the website for extra context during generation |
-
-## Step 3 — Generate the agent draft
-
-```
-POST /setup/generate
-{ ...same profile body as Step 2... }
+Optional `.env` vars:
+```env
+EMAIL_USER=your-email@gmail.com          # for order email notifications
+EMAIL_PASS=your-app-password             # Gmail app password
+ORDER_EMAIL_RECIPIENTS=you@email.com     # comma-separated
 ```
 
-This runs **4 parallel GPT-4o calls** that produce:
+Install and start:
+```bash
+npm install
+node server.js
+# → 🚀 Order backend running on http://localhost:3000
+```
 
-| File | What it contains |
-|---|---|
-| `agents/<slug>.yml` | Agent manifest — intents, tools, greet/help/error messages, intent hints |
-| `agents/support/faq.yml` | 10-15 FAQs with keyword matching + escalation triggers |
-| `policy/policy.yml` | Allowed/restricted intents + 30-60 domain keywords |
-| `db/schema.sql` | CREATE TABLE statements for the business |
-| `db/seed.js` | Sample data seeder script |
-| `config/settings.json` | LLM config, admin credentials, API secret |
+Verify:
+```bash
+curl http://localhost:3000/menu?type=main | head -c 200
+# Should return JSON with your menu sections
+```
 
-All files land in `draft/workspaces/bloom-flower-shop/` — **not live yet**.
+If the menu is empty, load it through the admin panel at `http://localhost:3000/admin`.
 
-Response:
+---
+
+## Step 2 — Configure the Secure Agent
+
+```bash
+cd secure-agent
+npm install
+```
+
+### 2a — config/settings.json
+
+This file is gitignored. Create it with your real values:
+
 ```json
 {
-  "ok": true,
-  "slug": "bloom-flower-shop",
-  "workspaceId": "bloom-flower-shop",
-  "draftFiles": ["draft/workspaces/bloom-flower-shop/agents/bloom-flower-shop.yml", "..."],
-  "intents": ["greet", "help", "show_catalogue", "order_status", "support"],
-  "faqTopics": ["delivery_time", "wilting_policy", "custom_arrangements", "..."],
-  "keywordCount": 42
-}
-```
-
-## Step 4 — Test the draft
-
-```
-POST /setup/chat
-{
-  "phone": "919000000000",
-  "message": "hi",
-  "workspaceId": "bloom-flower-shop"
-}
-```
-
-Response:
-```json
-{
-  "ok": true,
-  "response": "Welcome to Bloom Flower Shop! 🌸 ...",
-  "source": "draft"
-}
-```
-
-`source: "draft"` confirms it's hitting the draft agent. If no draft exists, it falls through to the live agent and returns `source: "live"`.
-
-Test multiple scenarios:
-- Greeting: `"hi"`
-- Catalogue: `"show me bouquets under 500"`
-- Order status: `"where is my order"`
-- Support: `"my flowers arrived wilted"`
-- Out of domain: `"what's the weather"`
-
-## Step 5 — Promote to live
-
-```
-POST /setup/promote
-{ "workspaceId": "bloom-flower-shop" }
-```
-
-Copies all draft files to the live agent config directory. The agent reloads on the next request.
-
-Response:
-```json
-{
-  "ok": true,
-  "promoted": 6,
-  "files": ["agents/bloom-flower-shop.yml", "agents/support/faq.yml", "policy/policy.yml", "..."]
-}
-```
-
-## Step 6 — Generate data model notes
-
-Auto-introspect the database so the admin agent and query mode know the schema:
-
-```
-POST /setup/agent/notes/regenerate
-{ "workspaceId": "bloom-flower-shop" }
-```
-
-This reads every table, column, sample row, and date format from the workspace's database and asks the LLM to produce concise data model notes. The result is cached at `data/workspaces/bloom-flower-shop/config/data-model-notes.md`.
-
-Both the admin agent system prompt and the query mode SQL generator load these notes at runtime — so the LLM knows your schema without any hardcoded hints.
-
-To review what was generated:
-```
-GET /setup/agent/notes?workspaceId=bloom-flower-shop
-```
-
-To manually edit (e.g. add a gotcha the LLM missed):
-```
-POST /setup/agent/notes
-{
-  "workspaceId": "bloom-flower-shop",
-  "notes": "## Data Model Notes\n\n- appointments.date uses YYYY-MM-DD format..."
-}
-```
-
-## Step 7 — Configure governance
-
-Set tool access policies for this workspace:
-
-```
-POST /setup/governance/policy
-{
-  "workspaceId": "bloom-flower-shop",
-  "tools": {
-    "query_db": {
-      "category": "data",
-      "risk": "low",
-      "mutating": false,
-      "approval": "none",
-      "roles": ["super_admin", "system_admin"]
-    },
-    "send_whatsapp": {
-      "category": "communication",
-      "risk": "high",
-      "mutating": true,
-      "approval": "explicit",
-      "roles": ["super_admin", "system_admin"]
+  "llm": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "api_key": "<your-openai-api-key>"
+  },
+  "otp": {
+    "ttlSeconds": 300
+  },
+  "log": {
+    "level": "info"
+  },
+  "api": {
+    "port": 3001,
+    "secret": "<same WHATSAPP_AGENT_SECRET from Step 1>"
+  },
+  "admin": {
+    "number": "91XXXXXXXXXX",
+    "keyword": "admin",
+    "pin": "<pick a 4-6 digit PIN>",
+    "db_path": "<absolute path to ray-orders-backend/orders.db>",
+    "business_name": "Ray's Home Kitchen",
+    "agent_llm": {
+      "model": "gpt-4o-mini",
+      "api_key": "<your-openai-api-key>"
     }
   }
 }
 ```
 
-This creates `data/workspaces/bloom-flower-shop/policy/admin-governance.json`.
+| Field | What to put |
+|---|---|
+| `llm.api_key` | Your OpenAI API key (starts with `sk-`) |
+| `api.secret` | **Must match** the `WHATSAPP_AGENT_SECRET` in the orders backend `.env` |
+| `admin.number` | Your WhatsApp number with country code, no `+` (e.g. `919326492088`) |
+| `admin.pin` | PIN you'll type after the admin keyword to authenticate |
+| `admin.db_path` | Absolute path to `orders.db` (e.g. `/Users/you/ray-orders-backend/orders.db`) |
 
-## Step 8 — Switch between businesses
+### 2b — Link the database
 
-**Option A — Switch globally:**
-```
-POST /setup/workspace/select
-{ "workspaceId": "bloom-flower-shop" }
-```
-All subsequent requests without an explicit `workspaceId` use this workspace.
+The agent manifest references `./data/orders.db`. Create a symlink so the agent can read the same database the backend writes to:
 
-**Option B — Per-request targeting:**
-```
-POST /setup/admin/run
-{
-  "mode": "query",
-  "task": "show today's orders",
-  "workspaceId": "bloom-flower-shop"
-}
+```bash
+cd secure-agent
+mkdir -p data
+ln -sf /absolute/path/to/ray-orders-backend/orders.db data/orders.db
 ```
 
-**List all workspaces:**
-```
-GET /setup/workspaces
-```
-Returns:
-```json
-{
-  "workspaces": ["bloom-flower-shop", "rays-home-kitchen", "default"],
-  "active": "bloom-flower-shop"
-}
+Verify:
+```bash
+ls -la data/orders.db
+# Should show a symlink pointing to the real orders.db
 ```
 
-## Step 9 — Verify the profile
+### 2c — agents/restaurant.yml
 
-```
-GET /setup/profile?workspace=bloom-flower-shop
-```
+Update the placeholder values in the manifest. The file is already structured — you only need to change these fields:
 
-Returns the full profile, draft file list, and workspace summary.
+```yaml
+tools:
+  order_lookup:
+    upi_handle: "your-upi-id@bank"        # your real UPI handle for QR codes
+    website: "healthymealspot.com"          # your domain
+    brand_label: "healthymealspot.com"      # shown on QR code
+    country_code: "91"
 
-## Step 10 — Inspect and extend prompt guides
-
-See exactly what the LLM receives for every prompt in the system:
-
-```
-GET /setup/agent/prompts?workspaceId=bloom-flower-shop
-```
-
-Returns all prompt guides — both built-in (self-registered by each module) and custom (per workspace). Each guide shows the source file, what's editable, and the full prompt text.
-
-Fetch a single guide:
-```
-GET /setup/agent/prompts?id=admin-agent-system&workspaceId=bloom-flower-shop
+  support_faq:
+    escalation_phone: "+919326492088"       # your WhatsApp number for escalations
 ```
 
-If the built-in guides don't cover a business-specific need (e.g. "always suggest seasonal bouquets in December", or instructions for a custom tool you added), add a custom prompt guide:
+Everything else (`db_path`, `backend_url`, tool types, intents) is already correct.
 
-```
-POST /setup/agent/prompts
-{
-  "workspaceId": "bloom-flower-shop",
-  "id": "seasonal-rules",
-  "name": "Seasonal business rules",
-  "description": "Month-specific product recommendations",
-  "prompt": "In December, always suggest Christmas bouquets first. In February, lead with Valentine's arrangements."
-}
-```
+### 2d — Verify the policy
 
-Custom guides are stored in `data/workspaces/bloom-flower-shop/config/prompt-guides.json` and survive restarts. Remove with `DELETE /setup/agent/prompts { "id": "seasonal-rules" }`.
+The file `policy/policy.yml` controls which intents customers can trigger. It should already contain:
 
-Why this matters: when the agent does the wrong thing, you need to see the exact prompt it received. This API gives you full transparency — and the ability to fix it without touching code.
-
-## What each workspace gets
-
-```
-data/workspaces/bloom-flower-shop/
-├── profile.json                    # Business profile
-├── config/
-│   ├── data-model-notes.md          # Auto-generated DB schema notes (used by agent + query mode)
-│   └── prompt-guides.json           # Custom prompt guides added via API
-├── policy/
-│   └── admin-governance.json       # Governance rules (roles, workers, tools)
-├── logs/
-│   └── governance.audit.log        # Audit trail
-└── tmp/
-    └── admin-approvals.json        # Pending approval requests
-
-agents/bloom-flower-shop.yml        # Live agent manifest
-agents/support/faq.yml              # Live FAQ knowledge base
-policy/policy.yml                   # Live security policy (intents + domain keywords)
-config/settings.json                # LLM + admin config
+```yaml
+allowed_intents:
+  - greet
+  - help
+  - show_menu
+  - order_status
+  - place_order
+  - general_chat
+  - support
 ```
 
-## Quick reference — all onboarding APIs
+If it doesn't, update it. Any intent not in this list gets blocked for customers.
 
-| Step | Method | Endpoint | Purpose |
-|------|--------|----------|---------|
-| Auth | POST | `/setup/login` | Get session cookie |
-| Profile | GET | `/setup/profile?workspace=<id>` | Load profile |
-| Profile | POST | `/setup/profile` | Save profile |
-| Generate | POST | `/setup/generate` | Generate agent draft |
-| Test | POST | `/setup/chat` | Test draft/live agent |
-| Promote | POST | `/setup/promote` | Promote draft to live |
-| Notes | POST | `/setup/agent/notes/regenerate` | Auto-generate data model notes from DB |
-| Notes | GET | `/setup/agent/notes?workspaceId=<id>` | Read data model notes |
-| Notes | POST | `/setup/agent/notes` | Manually edit data model notes |
-| Prompts | GET | `/setup/agent/prompts?workspaceId=<id>` | View all prompt guides (built-in + custom) |
-| Prompts | GET | `/setup/agent/prompts?id=<id>&workspaceId=<id>` | View single prompt guide |
-| Prompts | POST | `/setup/agent/prompts` | Add custom prompt guide |
-| Prompts | DELETE | `/setup/agent/prompts` | Remove custom prompt guide |
-| Governance | POST | `/setup/governance/policy` | Update tool access |
-| Governance | GET | `/setup/governance` | View governance snapshot |
-| Workspaces | GET | `/setup/workspaces` | List all workspaces |
-| Workspaces | POST | `/setup/workspace/select` | Switch active workspace |
-| Workers | GET | `/setup/workers` | List agent workers |
-| Auth | POST | `/setup/logout` | Clear session |
+---
+
+## Step 3 — Start the Agent
+
+```bash
+cd secure-agent
+node index.js --agent agents/restaurant.yml
+```
+
+**First time?** You'll see a QR code in the terminal. Scan it with WhatsApp (Settings → Linked Devices → Link a Device). The session is saved in `auth/` — you won't need to scan again unless you log out.
+
+**Already linked?** It connects automatically:
+```
+WhatsApp connected
+http transport listening on port 3010
+whatsapp-agent API listening on port 3001
+```
+
+Verify:
+```bash
+curl http://127.0.0.1:3010/health
+# → {"status":"ok","agent":"restaurant-agent","timestamp":"..."}
+
+curl http://127.0.0.1:3010/capabilities
+# → {"agent":"restaurant-agent","intents":["greet","general_chat","show_menu",...],"tools":["concierge","rag_menu",...]}
+```
+
+---
+
+## Step 4 — Test via WhatsApp
+
+Send these messages from **any phone** (not the linked one) to the WhatsApp number:
+
+| Test | Message | Expected |
+|---|---|---|
+| Greeting | `hi` | Warm welcome from Ray's Home Kitchen |
+| Menu browse | `show me veg items` | List of vegetarian dishes with prices |
+| Nutrition filter | `high protein meals` | Filtered menu items |
+| Coupon check | `any offers?` | Active coupons list |
+| Place order | `I want to order` | Multi-step ordering flow starts |
+| Order status | `where is my order` | Shows active orders (or "not registered" if new) |
+| Support | `I have a complaint` | Support menu (5 options) |
+| Out of domain | `what's the weather` | Redirected back to food topics |
+
+### Test admin mode
+
+From the **admin phone** (the number in `settings.json → admin.number`), send:
+
+```
+admin <your-pin> show today's orders
+```
+
+The admin agent will query the database and respond with a summary.
+
+---
+
+## Step 5 — Verify the Full Flow
+
+### Order placement flow (WhatsApp)
+
+1. Customer sends: `I want to order`
+2. Agent shows menu sections (numbered)
+3. Customer picks a section number
+4. Agent shows items in that section
+5. Customer picks an item number
+6. Agent asks for quantity
+7. Customer can add more or checkout
+8. Agent asks for delivery time
+9. Customer confirms → order is created in the database
+10. Customer gets order confirmation
+11. Kitchen admin gets WhatsApp notification
+
+### Order status flow
+
+1. Customer sends: `order status`
+2. Agent looks up pending orders by phone number
+3. Shows delivery status, payment status, ETA
+
+### Invoice resend flow
+
+1. Customer sends: `resend my invoice`
+2. Agent finds the order, generates UPI QR code, sends invoice + QR via WhatsApp
+
+---
+
+## Step 6 — Access the Control Panel (Optional)
+
+The secure-agent includes a web-based control panel for testing and managing the AI:
+
+```
+http://localhost:3010/control
+```
+
+Login: `linkedin` / `community` (configured in `transports/http.js`)
+
+From here you can:
+- Preview what the agent will do before it executes (Preview → Approve → Execute)
+- Set execution policies (auto-execute low-risk, require approval for high-risk)
+- Save multi-step plans as reusable workflows
+- Test messages without sending them through WhatsApp
+
+---
+
+## Architecture Quick Reference
+
+### Customer message flow
+
+```
+WhatsApp message
+    → Sanitizer (72 patterns, blocks injection/XSS/SQL)
+    → Session check (active cart? active support? → skip LLM)
+    → Intent classification (heuristic + LLM)
+    → Policy engine (allowed_intents check)
+    → Tool executor (deterministic dispatch)
+    → Response sent via WhatsApp
+```
+
+### What each tool does
+
+| Tool | Type | Handles |
+|---|---|---|
+| `concierge` | `business_chat` | Greetings, general chat, recommendations |
+| `rag_menu` | `menu_rag` | Menu search with nutrition/price/veg filters |
+| `order_create` | `order_create` | Multi-turn ordering flow (browse → cart → checkout) |
+| `order_lookup` | `order_lookup` | Order status, invoice resend, UPI QR generation |
+| `support_faq` | `restaurant_support` | Complaint handling, escalation to admin |
+
+### Ports
+
+| Port | Service | Purpose |
+|---|---|---|
+| 3000 | ray-orders-backend | Database, admin panel, order API |
+| 3001 | secure-agent (WhatsApp API) | Outbound WhatsApp messages (`POST /send`) |
+| 3010 | secure-agent (HTTP console) | Control panel, setup UI, preview engine |
+
+### Key files
+
+| File | Purpose |
+|---|---|
+| `agents/restaurant.yml` | Agent manifest — intents, tools, messages |
+| `config/settings.json` | LLM keys, admin config, API secret |
+| `policy/policy.yml` | Allowed intents + domain keywords |
+| `data/orders.db` | Symlink to the real database |
+| `auth/` | WhatsApp session (auto-created on first QR scan) |
+| `domain-packs/restaurant/` | Restaurant-specific tool handlers |
+
+---
+
+## Troubleshooting
+
+### "AgentChain: call loadAgent() first"
+You forgot `--agent agents/restaurant.yml` when starting the server.
+
+### Agent responds but menu is empty
+The `data/orders.db` symlink is broken or points to a DB with no menu data. Verify:
+```bash
+ls -la data/orders.db
+sqlite3 data/orders.db "SELECT COUNT(*) FROM menu_items"
+```
+
+### "whatsapp not connected" on /send
+The WhatsApp session expired or was never created. Delete `auth/` and restart to get a fresh QR code:
+```bash
+rm -rf auth/
+node index.js --agent agents/restaurant.yml
+# Scan the QR code
+```
+
+### Customer messages are blocked
+Check `policy/policy.yml` — the intent must be in `allowed_intents`. Also check that `domain_keywords` includes words the customer might use.
+
+### Admin commands don't work
+- Verify `admin.number` in `config/settings.json` matches your WhatsApp number (format: `91XXXXXXXXXX`, no `+`)
+- Message format: `admin <pin> <your command>`
+- The admin phone must be the one sending the message
+
+### Orders aren't created
+- Check that `order_create.backend_url` in `restaurant.yml` points to the running orders backend (`http://localhost:3000`)
+- Check that the orders backend's `WHATSAPP_AGENT_SECRET` matches `api.secret` in `config/settings.json`
+
+### Invoice QR codes fail
+- Check that `order_lookup.upi_handle` in `restaurant.yml` is your real UPI ID
+- The `buildQr` tool requires Python 3 with PIL/Pillow installed:
+  ```bash
+  pip3 install Pillow
+  ```
+
+---
+
+## Checklist
+
+Before going live, verify every item:
+
+- [ ] `ray-orders-backend` is running on `:3000` with menu data loaded
+- [ ] `config/settings.json` has real OpenAI API key
+- [ ] `config/settings.json` → `api.secret` matches orders backend `WHATSAPP_AGENT_SECRET`
+- [ ] `config/settings.json` → `admin.number` is your WhatsApp number (no `+`)
+- [ ] `config/settings.json` → `admin.db_path` is the absolute path to `orders.db`
+- [ ] `data/orders.db` symlink exists and points to the real database
+- [ ] `agents/restaurant.yml` → `upi_handle` is your real UPI ID
+- [ ] `agents/restaurant.yml` → `website` is your real domain
+- [ ] `agents/restaurant.yml` → `escalation_phone` is your real phone
+- [ ] `policy/policy.yml` has all 7 intents in `allowed_intents`
+- [ ] WhatsApp QR scanned and session saved in `auth/`
+- [ ] Tested: greeting, menu, order, status, support from a non-admin phone
+- [ ] Tested: admin query from the admin phone
+- [ ] Python 3 + Pillow installed (for invoice QR codes)

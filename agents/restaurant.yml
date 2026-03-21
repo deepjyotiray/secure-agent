@@ -9,7 +9,7 @@ agent:
 intent_hints:
   greet: "customer says hi, hello, thanks, bye, or starts a casual conversation"
   general_chat: "customer asks a general question, recommendation, craving, weather, or small-talk that should still be answered in a business-aware way"
-  show_menu: "customer asks about menu items, dishes, availability, prices, veg or non-veg options, offers, nutrition, or what is available"
+  show_menu: "customer asks about menu items, dishes, availability, prices, veg or non-veg options, offers, calories, protein, fat, nutrition, healthy meals, low-calorie options, keto, diet, or any food filtering by nutritional value — this includes questions like 'meals under 400 calories' or 'high protein dishes'"
   order_status: "customer asks about an existing order, payment, invoice, receipt, qr code, delivery status, eta, or resend"
   place_order: "customer wants to buy, order, add to cart, checkout, or start placing an order"
   support: "customer has a problem, complaint, refund request, wrong item, missing item, allergy issue, late delivery, or wants a human"
@@ -51,11 +51,11 @@ tools:
     tone: "warm, sharp, and naturally business-aware"
     greeting: "Welcome to Ray's Home Kitchen."
     signature_line: "If you're hungry, I can also suggest something from today's menu."
-    db_path: "/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db"
+    db_path: "./data/orders.db"
 
   rag_menu:
-    type: rag
-    db_path: "/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db"
+    type: menu_rag
+    db_path: "./data/orders.db"
     system_prompt: |
       You are a helpful assistant for Ray's Home Kitchen.
       Answer using ONLY the provided menu data. Be concise and well formatted.
@@ -64,18 +64,18 @@ tools:
 
   order_create:
     type: order_create
-    db_path: "/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db"
+    db_path: "./data/orders.db"
     backend_url: "http://localhost:3000"
 
   order_lookup:
-    type: sqlite
-    db_path: "/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db"
-    upi_handle: "XXXXXXXXXX@pthdfc"
+    type: order_lookup
+    db_path: "./data/orders.db"
+    upi_handle: "9594614752@pthdfc"
     website: "healthymealspot.com"
     brand_label: "healthymealspot.com"
     country_code: "91"
 
   support_faq:
-    type: support
-    db_path: "/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db"
+    type: restaurant_support
+    db_path: "./data/orders.db"
     escalation_phone: "+919594614752"

@@ -2,33 +2,31 @@
 
 const fs = require("fs")
 const Database = require("better-sqlite3")
-const { buildFramedQr } = require("./buildQr")
-const settings = require("../config/settings.json")
+const { buildFramedQr } = require("../../../tools/buildQr")
+const settings = require("../../../config/settings.json")
 
-const DB_PATH = "/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db"
-const AGENT_URL = `http://127.0.0.1:${settings.api.port}/send`
+const AGENT_URL    = `http://127.0.0.1:${settings.api.port}/send`
 const AGENT_SECRET = settings.api.secret
 
-function getDb() {
-    return new Database(DB_PATH, { readonly: true })
+function getDb(dbPath) {
+    const db = new Database(dbPath, { readonly: true })
+    db.pragma("busy_timeout = 5000")
+    return db
 }
 
 function normalisePhone(phone) {
-    // Strip Baileys JID suffix, keep digits only, last 10
     return String(phone).replace(/@.*$/, "").replace(/\D/g, "").slice(-10)
 }
 
-function isRegistered(last10) {
-    const db = getDb()
+function isRegistered(dbPath, last10) {
+    const db = getDb(dbPath)
     try {
         return !!db.prepare("SELECT id FROM users WHERE mobile LIKE ?").get(`%${last10}`)
-    } finally {
-        db.close()
-    }
+    } finally { db.close() }
 }
 
-function getPendingOrders(last10) {
-    const db = getDb()
+function getPendingOrders(dbPath, last10) {
+    const db = getDb(dbPath)
     try {
         return db.prepare(`
             SELECT id, order_for, items, total, status,
@@ -36,19 +34,16 @@ function getPendingOrders(last10) {
             FROM orders
             WHERE phone LIKE ?
               AND delivery_status NOT IN ('Delivered', 'Cancelled')
-            ORDER BY created_at DESC
-            LIMIT 3
+            ORDER BY created_at DESC LIMIT 3
         `).all(`%${last10}`)
-    } finally {
-        db.close()
-    }
+    } finally { db.close() }
 }
 
 const DELIVERY_STATUS_MSG = {
-    Confirmed:   "✅ Your order is confirmed and will be delivered by",
-    Preparing:   "👨‍🍳 Your order is being prepared and will be ready by",
-    "Out for Delivery": "🛵 Your order is out for delivery! Expected by",
-    Pending:     "⏳ Your order is pending confirmation. Expected delivery by",
+    Confirmed:           "✅ Your order is confirmed and will be delivered by",
+    Preparing:           "👨🍳 Your order is being prepared and will be ready by",
+    "Out for Delivery":  "🛵 Your order is out for delivery! Expected by",
+    Pending:             "⏳ Your order is pending confirmation. Expected delivery by",
 }
 
 function deliveryFocus(o) {
@@ -82,35 +77,40 @@ function detectFocus(msg) {
     return "full"
 }
 
-async function execute(_params, context) {
+function formatPhone(rawPhone, countryCode = "91") {
+    const digits = rawPhone.replace(/@.*$/, "").replace(/\D/g, "")
+    const local10 = digits.slice(-10)
+    return `+${countryCode}${local10}`
+}
+
+async function execute(_params, context, toolConfig) {
+    const { db_path, upi_handle, website, country_code = "91", brand_label } = toolConfig
     const last10 = normalisePhone(context.phone)
 
-    if (!isRegistered(last10)) {
-        return "It looks like you're not registered yet.\nSign up at 👇\nhttps://healthymealspot.com/login"
+    if (!isRegistered(db_path, last10)) {
+        return `It looks like you're not registered yet.\nSign up at 👇\nhttps://${website}/login`
     }
 
-    const orders = getPendingOrders(last10)
+    const orders = getPendingOrders(db_path, last10)
 
     if (!orders.length) {
-        return "You have no active orders right now.\nVisit https://healthymealspot.com to place one! 🍽️"
+        return `You have no active orders right now.\nVisit https://${website} to place one! 🍽️`
     }
 
     const focus = detectFocus(context.rawMessage || "")
 
-    if (focus === "delivery") {
-        return orders.map(o => deliveryFocus(o)).join("\n\n")
-    }
+    if (focus === "delivery") return orders.map(o => deliveryFocus(o)).join("\n\n")
+
     if (focus === "invoice") {
+        const to = formatPhone(context.phone, country_code)
         const results = await Promise.allSettled(orders.map(async o => {
             const msg = o.customer_message
             if (!msg) return paymentFocus(o)
             if ((o.payment_status || "").toLowerCase() === "paid") return msg
-            const upiLink = `upi://pay?pa=9594614752@pthdfc&pn=RAY+D&am=${o.total}&cu=INR&tn=Invoice+${o.id}`
-            const phone = context.phone.replace(/@.*$/, "").replace(/^(\d{10})$/, "+91$1")
-            const to = phone.startsWith("+") ? phone : `+${phone}`
+            const upiLink = `upi://pay?pa=${upi_handle}&pn=RAY+D&am=${o.total}&cu=INR&tn=Invoice+${o.id}`
             let tmpFile
             try {
-                tmpFile = await buildFramedQr(upiLink)
+                tmpFile = await buildFramedQr(upiLink, brand_label || website)
                 await fetch(AGENT_URL, {
                     method: "POST",
                     headers: { "Content-Type": "application/json", "x-secret": AGENT_SECRET },
@@ -119,14 +119,13 @@ async function execute(_params, context) {
             } finally {
                 if (tmpFile) fs.unlink(tmpFile, () => {})
             }
-            return null  // already sent via agent API directly
+            return null
         }))
         const fallbacks = results.filter(r => r.status === "fulfilled" && r.value).map(r => r.value)
-        return fallbacks.length ? fallbacks.join("\n\n") : "✅ Invoice resent with payment QR!"
+        return fallbacks.length ? fallbacks.join("\n\n") : null
     }
-    if (focus === "payment") {
-        return orders.map(o => o.customer_message || paymentFocus(o)).join("\n\n")
-    }
+
+    if (focus === "payment") return orders.map(o => o.customer_message || paymentFocus(o)).join("\n\n")
 
     const header = orders.length === 1 ? "Here's your active order:" : `Here are your ${orders.length} active orders:`
     return header + "\n\n" + orders.map((o, i) =>

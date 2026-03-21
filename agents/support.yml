@@ -2,13 +2,13 @@ agent:
   name: support-agent
   domain: support
   version: "1.0.0"
-  description: "Ray's Home Kitchen — Customer support agent"
-  skip_domain_gate: true   # support accepts all messages restaurant couldn't handle
+  description: "Customer support agent"
+  skip_domain_gate: true
 
   error_message: "Something went wrong. Please try again."
 
   escalation:
-    admin_phone: "+919594614752"
+    admin_phone: "+91XXXXXXXXXX"
     trigger_phrases:
       - talk to human
       - speak to someone
@@ -27,6 +27,6 @@ tools:
   support_faq:
     type: support
     faq_path: "./agents/support/faq.yml"
-    db_path: "/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db"
-    business_name: "Ray's Home Kitchen"
+    db_path: "./data/orders.db"
+    business_name: "Your Business Name"
     escalation_phone: "+91XXXXXXXXXX"

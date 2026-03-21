@@ -553,7 +553,7 @@ More examples:
 ```json
 { "mode": "agent", "task": "pm2 status" }
 { "mode": "agent", "task": "mark order ORD-123 as delivered" }
-{ "mode": "agent", "task": "recon https://healthymealspot.com" }
+{ "mode": "agent", "task": "recon https://example.com" }
 ```
 
 Response:

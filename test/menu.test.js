@@ -7,8 +7,8 @@
  * subscription exclusion, empty results, natural language variations.
  */
 
-const { retrieveContext } = require("../knowledge/rag")
-const DB = "/Users/deepjyotiray/Documents/FoodWebsite/ray-orders-backend/orders.db"
+const { retrieveContext } = require("../domain-packs/restaurant/tools/menuRag")
+const DB = process.env.TEST_DB_PATH || "./data/orders.db"
 
 let passed = 0, failed = 0, total = 0
 

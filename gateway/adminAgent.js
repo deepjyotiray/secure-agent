@@ -133,7 +133,7 @@ const CORE_TOOL_DEFINITIONS = [
             description: "Security recon scan on a URL: checks security headers, SSL, server info disclosure, cookie flags, and probes common sensitive paths.",
             parameters: {
                 type: "object",
-                properties: { url: { type: "string", description: "Base URL to scan e.g. https://healthymealspot.com" } },
+                properties: { url: { type: "string", description: "Base URL to scan e.g. https://example.com" } },
                 required: ["url"]
             }
         }

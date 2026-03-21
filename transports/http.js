@@ -24,7 +24,8 @@ const { listWorkers } = require("../gateway/adminWorkers")
 const { loadNotes, saveNotes, generateNotes } = require("../core/dataModelNotes")
 const { getPromptGuides, getPromptGuide, addCustomGuide, removeCustomGuide } = require("../core/promptGuides")
 const { getActiveWorkspace, listWorkspaceIds } = require("../core/workspace")
-const { buildPreview, approveAndExecute, reject: rejectPreview, listPending } = require("../runtime/previewEngine")
+const { buildPreview, buildWorkflowPreview, approveAndExecute, reject: rejectPreview, listPending, getPending, getEntry, setExecutionPolicy, getExecutionPolicy, setAutoMode, isAutoMode } = require("../runtime/previewEngine")
+const workflowStore = require("../runtime/workflowStore")
 const debugInterceptor = require("../runtime/debugInterceptor")
 
 const PORT   = settings.transports?.http?.port || 3010
@@ -32,7 +33,7 @@ const SECRET = settings.api.secret
 const PUBLIC_DIR = path.resolve(__dirname, "../public")
 const SETUP_USER = "linkedin"
 const SETUP_PASS = "community"
-const SETUP_HOST = "secureai.healthymealspot.com"
+const SETUP_HOSTS = (process.env.SETUP_HOST || "localhost").split(",").map(h => h.trim().toLowerCase())
 const SETUP_COOKIE = "secureai_session"
 const SESSION_TTL_MS = 1000 * 60 * 60 * 12
 
@@ -138,24 +139,25 @@ const server = http.createServer(async (req, res) => {
     const host = hostName(req)
     const url = requestUrl(req)
     const pathname = url.pathname
-    const setupHost = host === SETUP_HOST
-    const loginAsset = req.method === "GET" && (pathname === "/" || pathname === "/login" || pathname === "/intercept" || pathname.startsWith("/setup/assets/"))
+    const setupHost = SETUP_HOSTS.includes(host)
+    const isSetupPath = pathname.startsWith("/setup") || setupHost || pathname === "/" || pathname === "/login" || pathname === "/intercept" || pathname === "/control"
+    const loginAsset = req.method === "GET" && (pathname === "/" || pathname === "/login" || pathname === "/intercept" || pathname === "/control" || pathname.startsWith("/setup/assets/"))
     const loginApi = req.method === "POST" && pathname === "/setup/login"
 
-    if (pathname.startsWith("/setup") || setupHost) {
+    if (isSetupPath) {
         if (!loginAsset && !loginApi && !isSetupAuthorized(req)) {
             unauthorizedSetup(res)
             return
         }
     }
 
-    if (req.method === "GET" && pathname === "/" && setupHost) {
+    if (req.method === "GET" && pathname === "/") {
         const target = isSetupAuthorized(req) ? "index.html" : "login.html"
         serveFile(res, path.join(PUBLIC_DIR, "setup", target))
         return
     }
 
-    if (req.method === "GET" && pathname === "/login" && setupHost) {
+    if (req.method === "GET" && pathname === "/login") {
         serveFile(res, path.join(PUBLIC_DIR, "setup", "login.html"))
         return
     }
@@ -163,6 +165,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && (pathname === "/intercept" || pathname === "/setup/intercept")) {
         if (!isSetupAuthorized(req)) { serveFile(res, path.join(PUBLIC_DIR, "setup", "login.html")); return }
         serveFile(res, path.join(PUBLIC_DIR, "setup", "intercept.html"))
+        return
+    }
+
+    if (req.method === "GET" && (pathname === "/control" || pathname === "/setup/control")) {
+        if (!isSetupAuthorized(req)) { serveFile(res, path.join(PUBLIC_DIR, "setup", "login.html")); return }
+        serveFile(res, path.join(PUBLIC_DIR, "setup", "control.html"))
         return
     }
 
@@ -639,7 +647,81 @@ const server = http.createServer(async (req, res) => {
         return
     }
 
+    // ── Reload ──────────────────────────────────────────────────────────────────
+
+    if (req.method === "POST" && pathname === "/setup/reload") {
+        try {
+            agentChain.reloadAgent()
+            sendJson(res, 200, { ok: true, agent: agentChain.healthCheck() })
+        } catch (err) {
+            logger.error({ err }, "setup reload failed")
+            sendJson(res, 500, { error: err.message })
+        }
+        return
+    }
+
+    // ── Workflows ─────────────────────────────────────────────────────────────
+
+    if (req.method === "GET" && pathname === "/setup/workflows") {
+        sendJson(res, 200, { ok: true, workflows: workflowStore.list() })
+        return
+    }
+
+    if (req.method === "POST" && pathname === "/setup/workflows/save") {
+        try {
+            const { name, description, plan } = await readBody(req)
+            if (!name || !plan) { sendJson(res, 400, { error: "name and plan required" }); return }
+            const workflow = workflowStore.save(name, description, plan, agentChain._manifest)
+            sendJson(res, 200, { ok: true, workflow })
+        } catch (err) {
+            sendJson(res, 400, { error: err.message })
+        }
+        return
+    }
+
+    if (req.method === "POST" && pathname === "/setup/workflows/run") {
+        try {
+            const { workflowId, phone, inputs } = await readBody(req)
+            if (!workflowId) { sendJson(res, 400, { error: "workflowId required" }); return }
+            const preview = await buildWorkflowPreview(workflowId, phone || "workflow-runner", getActiveWorkspace(), inputs || {})
+            sendJson(res, 200, { ok: true, preview })
+        } catch (err) {
+            logger.error({ err }, "workflow run failed")
+            sendJson(res, err.message === "workflow_not_found" ? 404 : 500, { error: err.message })
+        }
+        return
+    }
+
+    if (req.method === "DELETE" && pathname.startsWith("/setup/workflows/")) {
+        try {
+            const id = pathname.replace("/setup/workflows/", "")
+            const removed = workflowStore.remove(id)
+            if (!removed) { sendJson(res, 404, { error: "workflow_not_found" }); return }
+            sendJson(res, 200, { ok: true, deleted: id })
+        } catch (err) {
+            sendJson(res, 500, { error: err.message })
+        }
+        return
+    }
+
     // ── Preview → Approve → Execute ──────────────────────────────────────────
+
+    if (req.method === "GET" && pathname === "/setup/preview/policy") {
+        sendJson(res, 200, { ok: true, policy: getExecutionPolicy() })
+        return
+    }
+
+    if (req.method === "POST" && pathname === "/setup/preview/policy") {
+        try {
+            const body = await readBody(req)
+            if (body.autoMode !== undefined) setAutoMode(body.autoMode)
+            if (body.execution_policy) setExecutionPolicy(body.execution_policy)
+            sendJson(res, 200, { ok: true, policy: getExecutionPolicy() })
+        } catch (err) {
+            sendJson(res, 500, { error: err.message })
+        }
+        return
+    }
 
     if (req.method === "POST" && pathname === "/setup/preview") {
         try {
@@ -656,9 +738,9 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && pathname === "/setup/preview/approve") {
         try {
-            const { requestId } = await readBody(req)
+            const { requestId, modifiedPlan } = await readBody(req)
             if (!requestId) { sendJson(res, 400, { error: "requestId required" }); return }
-            const result = await approveAndExecute(requestId)
+            const result = await approveAndExecute(requestId, modifiedPlan || null)
             if (result.error) { sendJson(res, 404, result); return }
             sendJson(res, 200, { ok: true, ...result })
         } catch (err) {
@@ -683,6 +765,14 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && pathname === "/setup/preview/pending") {
         sendJson(res, 200, { ok: true, pending: listPending() })
+        return
+    }
+
+    if (req.method === "GET" && pathname.startsWith("/setup/preview/") && pathname !== "/setup/preview/pending") {
+        const previewId = pathname.replace("/setup/preview/", "")
+        const entry = getPending(previewId)
+        if (!entry) { sendJson(res, 404, { error: "preview_not_found" }); return }
+        sendJson(res, 200, { ok: true, ...entry })
         return
     }
 

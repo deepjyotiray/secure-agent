@@ -34,7 +34,7 @@ faqs:
     keywords: [bulk, corporate, office, event, party, large, catering, group]
     answer: |
       We love catering for events and offices.
-      For bulk orders (10+ meals), please visit https://healthymealspot.com or say "talk to human" and we'll put together a custom quote for you.
+      For bulk orders (10+ meals), please visit our website or say "talk to human" and we'll put together a custom quote for you.
 
   - topic: payment_issue
     keywords: [payment, paid, not reflecting, upi, failed, transaction, charged twice]
@@ -45,20 +45,20 @@ faqs:
   - topic: delivery_area
     keywords: [deliver, area, location, pincode, zone, available, serviceable]
     answer: |
-      We currently deliver within a limited radius from our kitchen. You can check if your area is serviceable when placing an order at https://healthymealspot.com.
+      We currently deliver within a limited radius from our kitchen. You can check if your area is serviceable when placing an order on our website.
       If you're just outside our zone, say "talk to human". We sometimes make exceptions for regular customers.
 
   - topic: ordering
     keywords: [how to order, place order, website, app, order online]
     answer: |
-      Ordering is easy. Visit https://healthymealspot.com, browse the menu, and place your order.
+      Ordering is easy. Visit our website, browse the menu, and place your order.
       You'll receive a WhatsApp confirmation with your invoice and payment QR code right here.
 
   - topic: timings
     keywords: [timing, open, close, hours, when, available, lunch, dinner, breakfast]
     answer: |
       We prepare fresh meals daily. Our menu and availability are updated on the website each morning.
-      Check today's menu by asking "show menu" or visit https://healthymealspot.com.
+      Check today's menu by asking "show menu" or visit our website.
 
 escalation_triggers:
   - talk to human

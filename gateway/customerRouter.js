@@ -2,13 +2,13 @@
 
 const { parseIntent } = require("./intentParser")
 
-// ── Default heuristic word lists (restaurant/food — backward compat) ─────────
+// ── Default heuristic word lists (generic — domain packs can override) ───────
 const DEFAULT_HEURISTICS = {
     weather: ["weather", "rain", "raining", "sunny", "summer", "winter", "hot", "cold", "monsoon", "humidity", "forecast"],
-    menu:    ["menu", "dish", "dishes", "item", "items", "veg", "non-veg", "vegetarian", "starter", "main course", "biryani", "tandoori", "paneer", "chicken", "mutton", "fish", "dessert", "drink", "price", "cost", "special"],
-    order:   ["order", "delivery", "delivered", "status", "track", "eta", "invoice", "receipt", "bill", "payment", "paid", "unpaid", "upi", "qr", "resend", "refund", "late"],
-    buy:     ["place order", "want to order", "i want", "buy", "checkout", "cart", "add", "confirm order", "hungry"],
-    support: ["problem", "issue", "complaint", "wrong order", "missing", "late", "refund", "human", "manager", "agent", "support", "allergy"],
+    menu:    ["menu", "catalog", "catalogue", "item", "items", "product", "products", "service", "services", "price", "cost", "list", "browse", "show", "available", "option", "options"],
+    order:   ["order", "delivery", "delivered", "status", "track", "eta", "invoice", "receipt", "bill", "payment", "paid", "unpaid", "resend", "refund"],
+    buy:     ["place order", "want to order", "i want", "buy", "checkout", "cart", "add", "confirm order", "purchase"],
+    support: ["problem", "issue", "complaint", "wrong", "missing", "late", "refund", "human", "manager", "agent", "support", "help"],
     greet:   ["hi", "hello", "hey", "namaste", "good morning", "good evening", "thanks", "thank you"],
 }
 
@@ -22,8 +22,8 @@ const DEFAULT_HEURISTIC_INTENT_MAP = {
     greet:   "greet",
 }
 
-// ── Default filter fields (food-specific — backward compat) ──────────────────
-const DEFAULT_FILTER_FIELDS = ["section", "veg", "query", "max_price", "max_calories", "min_protein", "max_fat"]
+// ── Default filter fields (generic — domain packs can override) ──────────────
+const DEFAULT_FILTER_FIELDS = ["section", "query", "max_price"]
 
 function includesAny(message, words) {
     return words.some(word => message.includes(word))

@@ -2,23 +2,31 @@
 
 const { complete } = require("../providers/llm")
 
-const DEFAULT_SYSTEM_PROMPT = `You are a helpful assistant for a food delivery service.
-You will be given a customer's question and menu data retrieved from the database.
-Answer using ONLY the provided menu data. Be concise and well formatted.
-Do NOT make up items or prices. If nothing matches, say so clearly.`
+const DEFAULT_SYSTEM_PROMPT = `You are a helpful business assistant.
+You will be given a customer's question and data retrieved from the business database.
+Answer using ONLY the provided data. Be concise and well formatted for WhatsApp.
+Do NOT make up information. If nothing matches, say so clearly.
+Only include results directly relevant to what the customer asked.`
+
+const MAX_RAG_CHARS = 4000
 
 async function generateResponse(userQuery, ragData, systemPrompt) {
-    // If RAG already returned a structured menu list, return it directly — no LLM
-    if (ragData && (ragData.includes("₹") || ragData.includes("Menu not available") || ragData.includes("No ") )) {
-        return ragData
+    // fast path: RAG already said nothing matched — no LLM needed
+    if (!ragData || ragData.startsWith("Sorry, nothing matched") || ragData.includes("not available")) {
+        return ragData || "Sorry, nothing matched your query."
     }
+
+    // truncate if RAG returned too much
+    const trimmed = ragData.length > MAX_RAG_CHARS
+        ? ragData.slice(0, MAX_RAG_CHARS) + "\n\n(data truncated)"
+        : ragData
 
     const prompt = `${systemPrompt || DEFAULT_SYSTEM_PROMPT}
 
 Customer question: ${userQuery}
 
-Menu data:
-${ragData}
+Retrieved data:
+${trimmed}
 
 Answer:`
 

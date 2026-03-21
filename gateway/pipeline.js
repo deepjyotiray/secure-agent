@@ -1,12 +1,11 @@
 "use strict"
 
 const { sanitize } = require("./sanitizer")
-const { parseIntent } = require("./intentParser")
-const { evaluate, isInDomain } = require("./policyEngine")
-const { execute } = require("./executor")
+const { isInDomain } = require("./policyEngine")
 const { hasPendingOtp } = require("./auth")
 const { isAdmin, parseAdminMessage, handleAdmin } = require("./admin")
 const logger = require("./logger")
+const agentChain = require("../runtime/agentChain")
 
 /**
  * Full secure execution pipeline.
@@ -31,10 +30,10 @@ async function pipeline(message, phone) {
     }
 
     // 2. OTP interception — if user has a pending OTP and sends a 6-digit code,
-    //    route directly to authTool without touching the LLM
+    //    route directly through agentChain
     if (/^\d{6}$/.test(message.trim()) && hasPendingOtp(phone)) {
         logger.info({ phone }, "pipeline: otp reply intercepted")
-        return await execute({ intent: "login", parameters: {} }, { phone, rawMessage: message })
+        return await agentChain.execute(message, phone)
     }
 
     // 3. Domain Confinement — fast-path check before hitting the LLM
@@ -42,35 +41,14 @@ async function pipeline(message, phone) {
     const wordCount = message.trim().split(/\s+/).length
     if (wordCount > 3 && !isInDomain(message)) {
         logger.info({ phone, message }, "pipeline: out of domain")
-        return "Sorry, I can only help with food orders and menu queries."
+        return "Sorry, that request is outside what I can help with."
     }
 
-    // 4. Intent Parsing (LLM as translator only)
-    let intent
+    // 4. Route through agentChain
     try {
-        intent = await parseIntent(message)
+        return await agentChain.execute(message, phone)
     } catch (err) {
-        logger.error({ phone, err }, "pipeline: intent parser error")
-        return "Something went wrong. Please try again."
-    }
-
-    logger.info({ phone, intent }, "pipeline: intent parsed")
-
-    // 5. Policy Evaluation
-    const policy = evaluate(intent)
-    if (!policy.allowed) {
-        logger.warn({ phone, intent: intent.intent, reason: policy.reason }, "pipeline: policy blocked")
-        if (policy.reason === "restricted_intent") {
-            return "Sorry, I cannot perform that request."
-        }
-        return "Sorry, I can only help with food orders and menu queries."
-    }
-
-    // 6. Tool Execution (deterministic, no LLM involvement)
-    try {
-        return await execute(intent, { phone, rawMessage: message })
-    } catch (err) {
-        logger.error({ phone, intent: intent.intent, err }, "pipeline: executor error")
+        logger.error({ phone, err }, "pipeline: agentChain error")
         return "Something went wrong. Please try again."
     }
 }

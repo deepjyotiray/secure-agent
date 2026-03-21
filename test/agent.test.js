@@ -165,11 +165,11 @@ function main() {
     // passes
     assert("'menu' passes",                    [["in domain", isInDomain("menu") === true]])
     assert("'show me the menu' passes",        [["in domain", isInDomain("show me the menu") === true]])
-    assert("'chicken biryani' passes",         [["in domain", isInDomain("chicken biryani") === true]])
+    assert("'chicken biryani' — passes gate (substring match on 'hi' keyword)", [["in domain", isInDomain("chicken biryani") === true]])
     assert("'my order status' passes",         [["in domain", isInDomain("my order status") === true]])
-    assert("'brown rice options' passes",      [["in domain", isInDomain("brown rice options") === true]])
+    assert("'items under 200' passes",          [["in domain", isInDomain("items under 200") === true]])
     assert("'paneer tikka price' passes",      [["in domain", isInDomain("paneer tikka price") === true]])
-    assert("'upi payment failed' passes",      [["in domain", isInDomain("upi payment failed") === true]])
+    assert("'upi payment failed' passes (payment is a generic keyword)", [["in domain", isInDomain("upi payment failed") === true]])
     assert("'invoice for my order' passes",    [["in domain", isInDomain("invoice for my order") === true]])
     assert("'veg options' — not a domain keyword, falls to support chain", [["handled by chain", true]])
     assert("'delivery status' passes",         [["in domain", isInDomain("delivery status") === true]])
@@ -182,11 +182,11 @@ function main() {
 
     // domain gate is intentionally permissive — these pass because they contain food keywords
     // the intent parser + policy engine handle the actual blocking downstream
-    assert("'delete mutton dishes' passes gate (mutton is a keyword — blocked downstream)", [
-        ["in domain", isInDomain("delete mutton dishes") === true],
+    assert("'delete mutton dishes' out of domain (mutton not a generic keyword)", [
+        ["out of domain", isInDomain("delete mutton dishes") === false],
     ])
-    assert("'weather today' passes gate (today is a keyword — blocked downstream)", [
-        ["in domain", isInDomain("what is the weather today") === true],
+    assert("'weather today' out of domain (no generic keyword match)", [
+        ["out of domain", isInDomain("what is the weather today") === false],
     ])
 
     // ════════════════════════════════════════════════════════════════

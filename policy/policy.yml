@@ -1,3 +1,6 @@
+# Global default policy — generic, domain-agnostic.
+# Workspace-specific policies override this (data/workspaces/<id>/policy.yml).
+
 allowed_intents:
   - greet
   - help
@@ -5,74 +8,32 @@ allowed_intents:
   - order_status
   - place_order
   - general_chat
+  - support
 
 restricted_intents:
-  - create_order
-  - cancel_order
   - login
+  - create_order
 
 domain_keywords:
-  - place
-  - want
+  - order
   - buy
   - cart
-  - add
   - checkout
-  - order
-  - food
-  - menu
-  - meal
-  - lunch
-  - dinner
-  - breakfast
-  - protein
-  - keto
-  - salad
-  - bowl
-  - diet
-  - calories
   - price
   - delivery
-  - restaurant
+  - status
+  - payment
+  - invoice
+  - receipt
+  - track
   - item
-  - dish
+  - product
+  - service
+  - catalog
+  - menu
+  - help
+  - support
   - hi
   - hello
   - hey
-  - help
-  - login
-  - coupon
-  - discount
-  - rice
-  - brown
-  - bread
-  - roti
-  - chapati
-  - paratha
-  - biryani
-  - pulao
-  - thali
-  - starter
-  - chicken
-  - paneer
-  - today
-  - when
-  - status
-  - deliver
-  - delivered
-  - payment
-  - paid
-  - pending
-  - track
-  - invoice
-  - receipt
-  - bill
-  - qr
-  - upi
-  - link
-  - resend
-  - proof
-  - due
-  - amount
-  - total
-  - charge
+  - thanks

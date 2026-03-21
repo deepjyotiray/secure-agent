@@ -3,27 +3,22 @@
 const { complete } = require("../providers/llm")
 const { registerGuide } = require("../core/promptGuides")
 
-// ── Default filter schema (food-specific — backward compat) ──────────────────
+// ── Default filter schema (generic — domain packs can override) ──────────────
 const DEFAULT_FILTER_SCHEMA = {
-    section:      { type: "string",  description: "menu section or category" },
-    veg:          { type: "boolean", description: "true = vegetarian only" },
-    query:        { type: "string",  description: "searchable item/category terms" },
-    max_price:    { type: "number",  description: "maximum price" },
-    max_calories: { type: "number",  description: "maximum calories" },
-    min_protein:  { type: "number",  description: "minimum protein in grams" },
-    max_fat:      { type: "number",  description: "maximum fat in grams" },
+    section:   { type: "string",  description: "catalog section or category" },
+    query:     { type: "string",  description: "searchable item/category terms" },
+    max_price: { type: "number",  description: "maximum price" },
 }
 
 const DEFAULT_EXTRACTION_RULES = `- For "under 200", "below 200", "less than 200", set "max_price": 200.
-- For "veg" or "vegetarian", set "veg": true. For "non-veg", "chicken", "mutton", "fish", or "egg" requests, set "veg": false only when the request clearly excludes veg.
 - Put the searchable item/category terms in "query" without price words if possible.
-- If the message is not a menu query, keep filter values null unless a field is clearly useful.
+- If the message is not a catalog query, keep filter values null unless a field is clearly useful.
 - Never drop a clear numerical constraint from the user's message.`
 
 const DEFAULT_FILTER_EXAMPLES = [
-    { input: `"chicken dish under 200"`, output: `{"intent":"show_menu","filter":{"section":null,"veg":false,"query":"chicken dish","max_price":200,"max_calories":null,"min_protein":null,"max_fat":null}}` },
-    { input: `"veg starters below 150"`, output: `{"intent":"show_menu","filter":{"section":"Veg Starters","veg":true,"query":"veg starters","max_price":150,"max_calories":null,"min_protein":null,"max_fat":null}}` },
-    { input: `"what is your support email"`, output: `{"intent":"general_chat","filter":{"section":null,"veg":null,"query":null,"max_price":null,"max_calories":null,"min_protein":null,"max_fat":null}}` },
+    { input: `"items under 200"`, output: `{"intent":"show_menu","filter":{"section":null,"query":"items","max_price":200}}` },
+    { input: `"what services do you offer"`, output: `{"intent":"show_menu","filter":{"section":null,"query":"services","max_price":null}}` },
+    { input: `"what is your support email"`, output: `{"intent":"general_chat","filter":{"section":null,"query":null,"max_price":null}}` },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
