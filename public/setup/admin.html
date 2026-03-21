@@ -1,0 +1,172 @@
+<!doctype html><html lang="en"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SecureAI — Admin</title>
+  <link rel="stylesheet" href="/setup/assets/shared.css">
+</head><body>
+  <main class="page">
+    <div class="page-header"><h2>Admin</h2><p>Run admin tasks, inspect governance, manage approvals, and control the WhatsApp interceptor.</p></div>
+
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-head"><h3>Admin Task Runner</h3></div>
+        <form id="task-form" style="display:grid;gap:10px">
+          <label class="field"><span>Mode</span>
+            <select id="task-mode"><option value="agent">Agent mode</option><option value="query">Query mode</option></select>
+          </label>
+          <label class="field"><span>Task</span><textarea id="task-input" rows="4" placeholder="e.g. show today's orders summary"></textarea></label>
+          <button class="btn btn-primary" type="submit">Run</button>
+        </form>
+        <div class="status-box" id="task-status" style="margin-top:10px">Ready.</div>
+        <pre class="code-block" id="task-out" style="margin-top:8px;min-height:120px">No task run yet.</pre>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Admin Image Analysis</h3></div>
+        <form id="img-form" style="display:grid;gap:10px">
+          <label class="field"><span>Image (base64 or URL)</span><textarea id="img-input" rows="3" placeholder="Paste base64 data or a URL…"></textarea></label>
+          <label class="field"><span>Caption (optional)</span><input id="img-caption" placeholder="What is this?"></label>
+          <button class="btn btn-primary" type="submit">Analyze</button>
+        </form>
+        <pre class="code-block" id="img-out" style="margin-top:8px;min-height:80px">No image analyzed yet.</pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Governance Snapshot</h3><button class="btn btn-ghost btn-sm" id="gov-refresh">Refresh</button></div>
+      <div class="status-box" id="gov-summary">Loading…</div>
+      <div class="card-grid" style="margin-top:12px">
+        <div><h4 style="font-size:0.82rem;color:var(--muted);margin-bottom:6px">Workers</h4><ul class="item-list" id="gov-workers"></ul></div>
+        <div><h4 style="font-size:0.82rem;color:var(--muted);margin-bottom:6px">Tools</h4><ul class="item-list" id="gov-tools"></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Governance Policy</h3></div>
+      <p style="font-size:0.82rem;color:var(--muted);margin-bottom:10px">Update the governance policy for this workspace.</p>
+      <form id="policy-form" style="display:grid;gap:10px">
+        <label class="field"><span>Policy JSON</span><textarea id="policy-json" rows="6" placeholder='{"allowed_intents":["greet","support"]}'></textarea></label>
+        <button class="btn btn-primary" type="submit">Update Policy</button>
+      </form>
+      <div class="status-box" id="policy-status" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Approval Queue</h3><button class="btn btn-ghost btn-sm" id="appr-refresh">Refresh</button></div>
+      <div id="appr-empty" class="empty-msg">No pending approvals.</div>
+      <div id="appr-list"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>WhatsApp Debug Interceptor</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="toggle-row" style="padding:6px 10px;gap:8px"><span style="font-size:0.82rem">Intercept</span><input id="wa-toggle" type="checkbox"></div>
+          <button class="btn btn-ghost btn-sm" id="wa-refresh">Refresh</button>
+        </div>
+      </div>
+      <div class="status-box" id="wa-status">Loading…</div>
+      <div id="wa-list" style="margin-top:10px"></div>
+    </div>
+  </main>
+  <script src="/setup/assets/shared.js"></script>
+  <script>
+    buildShell("admin")
+
+    // Task runner
+    $("task-form").addEventListener("submit", async e => {
+      e.preventDefault()
+      const task = $("task-input").value.trim(), mode = $("task-mode").value
+      if (!task) return
+      setText("task-status", "Running…"); setText("task-out", "Working…")
+      try {
+        const d = await api("/setup/admin/run", "POST", { task, mode, workspaceId: activeWorkspace })
+        setText("task-status", "✓ Completed (" + d.mode + ")")
+        setText("task-out", d.response || "No response")
+      } catch (e) { setText("task-status", "✗ " + e.message); setText("task-out", e.message) }
+    })
+
+    // Image analysis
+    $("img-form").addEventListener("submit", async e => {
+      e.preventDefault()
+      const image = $("img-input").value.trim(), caption = $("img-caption").value.trim()
+      if (!image) return
+      setText("img-out", "Analyzing…")
+      try {
+        const d = await api("/setup/admin/image", "POST", { image, caption, workspaceId: activeWorkspace })
+        setText("img-out", d.response || "No response")
+      } catch (e) { setText("img-out", "Error: " + e.message) }
+    })
+
+    // Governance
+    async function loadGov() {
+      try {
+        const d = await api(ws("/setup/governance"))
+        const desc = d.rolePolicy?.description ? "\n" + d.rolePolicy.description : ""
+        setText("gov-summary", "Role: " + (d.role||"unknown") + desc)
+        const wl = $("gov-workers"); wl.innerHTML = ""
+        for (const [n, t] of Object.entries(d.workers||{})) { const li = document.createElement("li"); li.textContent = n + ": " + t.join(", "); wl.appendChild(li) }
+        if (!wl.children.length) wl.innerHTML = '<li class="empty-msg">No workers</li>'
+        const tl = $("gov-tools"); tl.innerHTML = ""
+        for (const [n, c] of Object.entries(d.tools||{}).slice(0,20)) { const li = document.createElement("li"); li.textContent = `${n} (${c.category}, ${c.risk}, approval: ${c.approval})`; tl.appendChild(li) }
+        if (!tl.children.length) tl.innerHTML = '<li class="empty-msg">No tools</li>'
+      } catch (e) { setText("gov-summary", "Error: " + e.message) }
+    }
+    $("gov-refresh").addEventListener("click", loadGov)
+
+    // Policy update
+    $("policy-form").addEventListener("submit", async e => {
+      e.preventDefault()
+      try {
+        const body = JSON.parse($("policy-json").value)
+        body.workspaceId = activeWorkspace
+        const d = await api("/setup/governance/policy", "POST", body)
+        setText("policy-status", "✓ Policy updated.")
+      } catch (e) { setText("policy-status", "✗ " + e.message) }
+    })
+
+    // Approvals
+    async function loadAppr() {
+      try {
+        const d = await api(ws("/setup/approvals"))
+        const list = d.approvals || []
+        $("appr-empty").style.display = list.length ? "none" : "block"
+        const el = $("appr-list"); el.innerHTML = ""
+        for (const a of list) {
+          const div = document.createElement("div"); div.className = "card"; div.style.marginBottom = "8px"
+          div.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><strong>${esc(a.tool)}</strong><span class="badge badge-muted">${esc(a.status)}</span></div><div style="font-size:0.82rem;color:var(--muted);margin-top:6px">Worker: ${esc(a.worker)} · ${esc(a.createdAt)}<br>Reason: ${esc(a.reason||"Approval required")}<br>Task: ${esc(a.task)}</div>${a.status==="pending"?`<button class="btn btn-green btn-sm" style="margin-top:8px" data-aid="${esc(a.id)}">Approve</button>`:""}`
+          el.appendChild(div)
+        }
+        el.querySelectorAll("[data-aid]").forEach(btn => btn.addEventListener("click", async () => {
+          btn.disabled = true
+          try { await api("/setup/approvals/approve","POST",{id:btn.dataset.aid,workspaceId:activeWorkspace}); loadAppr() } catch(e) { btn.disabled = false }
+        }))
+      } catch (e) { setText("appr-empty", "Error: " + e.message) }
+    }
+    $("appr-refresh").addEventListener("click", loadAppr)
+
+    // WhatsApp debug
+    async function loadWa() {
+      try {
+        const d = await api("/setup/debug/status")
+        $("wa-toggle").checked = d.enabled
+        setText("wa-status", d.enabled ? `ON — ${d.held.length} held` : "OFF — messages execute normally")
+        const el = $("wa-list"); el.innerHTML = ""
+        for (const h of (d.held||[])) {
+          const div = document.createElement("div"); div.className = "card"; div.style.marginBottom = "8px"
+          const intent = h.preview?.routing?.intent || h.preview?.status || "unknown"
+          div.innerHTML = `<div style="display:flex;justify-content:space-between"><strong class="mono">${esc(h.phone.replace(/@.*$/,""))}</strong><span style="font-size:0.78rem;color:var(--muted)">${esc(h.age)} ago</span></div><div style="margin:6px 0;padding:8px 10px;border-radius:var(--radius-sm);background:var(--accent);color:#fff;font-size:0.88rem">${esc(h.message)}</div><div style="font-size:0.78rem;color:var(--muted)">Intent: ${esc(intent)}</div><div class="btn-group" style="margin-top:8px"><button class="btn btn-green btn-sm wa-appr" data-rid="${esc(h.preview?.requestId)}">✓ Approve</button><button class="btn btn-red btn-sm wa-rej" data-rid="${esc(h.preview?.requestId)}">✗ Reject</button></div>`
+          el.appendChild(div)
+        }
+        el.querySelectorAll(".wa-appr").forEach(b => b.addEventListener("click", async () => { b.disabled=true; try { await api("/setup/debug/approve","POST",{requestId:b.dataset.rid}); loadWa() } catch{b.disabled=false} }))
+        el.querySelectorAll(".wa-rej").forEach(b => b.addEventListener("click", async () => { b.disabled=true; try { await api("/setup/debug/reject","POST",{requestId:b.dataset.rid}); loadWa() } catch{b.disabled=false} }))
+      } catch (e) { setText("wa-status", "Error: " + e.message) }
+    }
+    $("wa-toggle").addEventListener("change", async e => {
+      try { await api("/setup/debug/toggle","POST",{enabled:e.target.checked}); loadWa() } catch { e.target.checked = !e.target.checked }
+    })
+    $("wa-refresh").addEventListener("click", loadWa)
+
+    window.onWorkspaceChange = () => { loadGov(); loadAppr() }
+    initWorkspace().then(() => { loadGov(); loadAppr(); loadWa() })
+  </script>
+</body></html>

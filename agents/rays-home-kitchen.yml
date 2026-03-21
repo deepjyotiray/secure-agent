@@ -1,0 +1,84 @@
+agent:
+  name: rays-home-kitchen-agent
+  domain: healthymealspot.com
+  version: "1.0.0"
+  description: "Ray's Home Kitchen is a home-style Indian food delivery service offering freshly prepared healthy meals with nutritional information."
+  chain:
+    - agents/support.yml
+  greet_message: "Hello! Welcome to Ray's Home Kitchen. We deliver healthy, home-cooked meals right to your doorstep. How can I assist you today?"
+  help_message: "I can help you browse our menu, place orders, check order status, and answer any questions about our meal plans and delivery."
+  out_of_domain_message: "I'm sorry, I can only assist with queries related to our menu, orders, and delivery."
+  restricted_message: "Sorry, I cannot perform that request."
+  error_message: "Something went wrong. Please try again."
+
+intent_hints:
+  greet: "customer says hi, hello, hey or any greeting"
+  help: "customer asks what can you do or asks for help"
+  browse_menu: "customer wants to see the menu or asks about available dishes"
+  place_order: "customer wants to place an order"
+  check_order_status: "customer asks about the status of their order"
+  subscription_info: "customer asks about meal subscription plans"
+  delivery_info: "customer inquires about delivery areas or times"
+  refund_policy: "customer asks about refund or return policy"
+
+intents:
+  greet:
+    tool: static_greet
+    auth_required: false
+  help:
+    tool: static_help
+    auth_required: false
+  browse_menu:
+    tool: menu_query
+    auth_required: false
+  place_order:
+    tool: order_placement
+    auth_required: false
+  check_order_status:
+    tool: order_status
+    auth_required: false
+  subscription_info:
+    tool: subscription_query
+    auth_required: false
+  delivery_info:
+    tool: delivery_query
+    auth_required: false
+  refund_policy:
+    tool: support_tool
+    auth_required: false
+
+tools:
+  static_greet:
+    type: static
+  static_help:
+    type: static
+  menu_query:
+    type: rag
+    db_path: "./data/orders.db"
+    vectordb_path: "./vectordb"
+    system_prompt: |
+      Provide detailed information about the menu items, including nutritional content, pricing, and availability. Ensure to highlight daily specials and subscription options.
+  order_placement:
+    type: sqlite
+    db_path: "./data/orders.db"
+  order_status:
+    type: sqlite
+    db_path: "./data/orders.db"
+  subscription_query:
+    type: rag
+    db_path: "./data/orders.db"
+    vectordb_path: "./vectordb"
+    system_prompt: |
+      Explain the meal subscription plans, including pricing, duration, and benefits. Highlight any special offers or discounts available.
+  delivery_query:
+    type: support
+    faq_path: "./agents/support/faq.yml"
+    db_path: "./data/orders.db"
+    business_name: "Ray's Home Kitchen"
+    escalation_phone: "919594614752"
+  support_tool:
+    type: support
+    faq_path: "./agents/support/faq.yml"
+    db_path: "./data/orders.db"
+    business_name: "Ray's Home Kitchen"
+    escalation_phone: "919594614752"

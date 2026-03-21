@@ -59,13 +59,26 @@ function contentType(filePath) {
     return "text/plain; charset=utf-8"
 }
 
+function assetVersion() {
+    try { return String(fs.statSync(path.join(PUBLIC_DIR, "setup", "app.js")).mtimeMs | 0) } catch { return "0" }
+}
+const ASSET_V = assetVersion()
+
 function serveFile(res, filePath) {
     if (!fs.existsSync(filePath)) {
         sendJson(res, 404, { error: "not_found" })
         return
     }
-    res.setHeader("Content-Type", contentType(filePath))
-    res.writeHead(200).end(fs.readFileSync(filePath))
+    const ct = contentType(filePath)
+    res.setHeader("Content-Type", ct)
+    let content = fs.readFileSync(filePath)
+    if (filePath.endsWith(".html")) {
+        res.setHeader("Cache-Control", "no-cache")
+        content = content.toString("utf8")
+            .replace(/(\.js)("|')/g, `$1?v=${ASSET_V}$2`)
+            .replace(/(\.css)("|')/g, `$1?v=${ASSET_V}$2`)
+    }
+    res.writeHead(200).end(content)
 }
 
 function unauthorizedSetup(res) {
@@ -140,21 +153,32 @@ const server = http.createServer(async (req, res) => {
     const url = requestUrl(req)
     const pathname = url.pathname
     const setupHost = SETUP_HOSTS.includes(host)
-    const isSetupPath = pathname.startsWith("/setup") || setupHost || pathname === "/" || pathname === "/login" || pathname === "/intercept" || pathname === "/control"
-    const loginAsset = req.method === "GET" && (pathname === "/" || pathname === "/login" || pathname === "/intercept" || pathname === "/control" || pathname.startsWith("/setup/assets/"))
-    const loginApi = req.method === "POST" && pathname === "/setup/login"
+
+    const PAGE_MAP = {
+        "/": "dashboard.html",
+        "/profile": "profile.html",
+        "/chat": "chat.html",
+        "/admin": "admin.html",
+        "/tools": "tools.html",
+        "/intercept": "intercept-v2.html",
+        "/control": "control-v2.html",
+        "/setup": "dashboard.html",
+        "/setup/intercept": "intercept-v2.html",
+        "/setup/control": "control-v2.html",
+    }
+
+    const isSetupPath = pathname.startsWith("/setup") || setupHost || PAGE_MAP[pathname] || pathname === "/login"
+    const loginAsset = req.method === "GET" && (pathname === "/login" || pathname.startsWith("/setup/assets/"))
 
     if (isSetupPath) {
-        if (!loginAsset && !loginApi && !isSetupAuthorized(req)) {
+        if (!loginAsset && !(req.method === "POST" && pathname === "/setup/login") && !isSetupAuthorized(req)) {
+            if (req.method === "GET" && PAGE_MAP[pathname]) {
+                serveFile(res, path.join(PUBLIC_DIR, "setup", "login.html"))
+                return
+            }
             unauthorizedSetup(res)
             return
         }
-    }
-
-    if (req.method === "GET" && pathname === "/") {
-        const target = isSetupAuthorized(req) ? "index.html" : "login.html"
-        serveFile(res, path.join(PUBLIC_DIR, "setup", target))
-        return
     }
 
     if (req.method === "GET" && pathname === "/login") {
@@ -162,20 +186,8 @@ const server = http.createServer(async (req, res) => {
         return
     }
 
-    if (req.method === "GET" && (pathname === "/intercept" || pathname === "/setup/intercept")) {
-        if (!isSetupAuthorized(req)) { serveFile(res, path.join(PUBLIC_DIR, "setup", "login.html")); return }
-        serveFile(res, path.join(PUBLIC_DIR, "setup", "intercept.html"))
-        return
-    }
-
-    if (req.method === "GET" && (pathname === "/control" || pathname === "/setup/control")) {
-        if (!isSetupAuthorized(req)) { serveFile(res, path.join(PUBLIC_DIR, "setup", "login.html")); return }
-        serveFile(res, path.join(PUBLIC_DIR, "setup", "control.html"))
-        return
-    }
-
-    if (req.method === "GET" && pathname === "/setup") {
-        serveFile(res, path.join(PUBLIC_DIR, "setup", "index.html"))
+    if (req.method === "GET" && PAGE_MAP[pathname]) {
+        serveFile(res, path.join(PUBLIC_DIR, "setup", PAGE_MAP[pathname]))
         return
     }
 
@@ -210,9 +222,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && pathname === "/setup/profile") {
+        res.setHeader("Cache-Control", "no-store")
         const workspaceId = getWorkspaceFromReq(req)
+        const profile = loadProfile(workspaceId)
+        logger.info({ workspaceId, businessName: profile.businessName }, "profile loaded")
         sendJson(res, 200, {
-            profile: loadProfile(workspaceId),
+            profile,
             draftFiles: listDraftFiles(workspaceId),
             ...getWorkspaceSummary(),
         })
@@ -274,6 +289,34 @@ const server = http.createServer(async (req, res) => {
             logger.error({ err }, "setup governance policy update failed")
             sendJson(res, 500, { error: err.message })
         }
+        return
+    }
+
+    if (req.method === "DELETE" && pathname.startsWith("/setup/governance/tool/")) {
+        try {
+            const toolName = decodeURIComponent(pathname.replace("/setup/governance/tool/", ""))
+            const workspaceId = requestUrl(req).searchParams.get("workspaceId") || getActiveWorkspace()
+            const snapshot = getGovernanceSnapshot(settings.admin?.role, workspaceId)
+            if (!snapshot.tools[toolName]) { sendJson(res, 404, { error: `tool '${toolName}' not in governance` }); return }
+            delete snapshot.tools[toolName]
+            const policy = updatePolicy({ tools: snapshot.tools }, workspaceId)
+            sendJson(res, 200, { ok: true, deleted: toolName, tools: policy.tools })
+        } catch (err) { sendJson(res, 500, { error: err.message }) }
+        return
+    }
+
+    if (req.method === "POST" && pathname === "/setup/governance/read-only") {
+        try {
+            const { enabled, workspaceId: wid } = await readBody(req)
+            const workspaceId = wid || getActiveWorkspace()
+            const snapshot = getGovernanceSnapshot(settings.admin?.role, workspaceId)
+            const patch = {}
+            for (const [name, cfg] of Object.entries(snapshot.tools)) {
+                if (cfg.mutating) patch[name] = { ...cfg, approval: enabled ? "explicit" : (cfg._origApproval || "task_intent") }
+            }
+            const policy = updatePolicy({ tools: patch }, workspaceId)
+            sendJson(res, 200, { ok: true, enabled, tools: policy.tools })
+        } catch (err) { sendJson(res, 500, { error: err.message }) }
         return
     }
 
@@ -355,7 +398,19 @@ const server = http.createServer(async (req, res) => {
                 return
             }
             const activeWorkspace = setActiveWorkspace(workspaceId)
-            sendJson(res, 200, { ok: true, activeWorkspace, ...getWorkspaceSummary() })
+            // hot-swap agent manifest for the selected workspace
+            const { invalidateProfileCache } = require("../runtime/executor")
+            invalidateProfileCache()
+            const profile = loadProfile(workspaceId)
+            const agentsDir = path.resolve(__dirname, "../agents")
+            const byId = path.join(agentsDir, `${workspaceId}.yml`)
+            const byProfile = profile.agentManifest ? path.resolve(__dirname, "..", profile.agentManifest) : null
+            const manifestPath = fs.existsSync(byId) ? byId : (byProfile && fs.existsSync(byProfile)) ? byProfile : null
+            if (manifestPath) {
+                agentChain.loadAgent(manifestPath)
+                logger.info({ workspaceId, manifestPath }, "workspace switch: agent reloaded")
+            }
+            sendJson(res, 200, { ok: true, activeWorkspace, agentLoaded: !!manifestPath, ...getWorkspaceSummary() })
         } catch (err) {
             logger.error({ err }, "setup workspace select failed")
             sendJson(res, 500, { error: err.message })
@@ -365,15 +420,26 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && pathname === "/setup/chat") {
         try {
-            const { phone, message, workspaceId } = await readBody(req)
+            const { phone, message, workspaceId, mode } = await readBody(req)
             if (!phone || !message) {
                 sendJson(res, 400, { error: "phone and message required" })
                 return
             }
-            const profile = loadProfile(workspaceId || getActiveWorkspace())
-            const preview = await chatWithDraft(profile, message, phone)
-            const response = preview ?? await agentChain.execute(message, phone)
-            sendJson(res, 200, { ok: true, response, source: preview ? "draft" : "live" })
+            let response, source
+            if (mode === "live") {
+                response = await agentChain.execute(message, phone)
+                source = "live"
+            } else {
+                const profile = loadProfile(workspaceId || getActiveWorkspace())
+                const preview = mode === "draft" ? await chatWithDraft(profile, message, phone) : (await chatWithDraft(profile, message, phone))
+                if (preview != null) {
+                    response = preview; source = "draft"
+                } else {
+                    response = await agentChain.execute(message, phone)
+                    source = "live"
+                }
+            }
+            sendJson(res, 200, { ok: true, response, source })
         } catch (err) {
             logger.error({ err }, "setup chat failed")
             sendJson(res, 500, { error: err.message })
@@ -642,6 +708,92 @@ const server = http.createServer(async (req, res) => {
             if (!result) { sendJson(res, 404, { error: "not_found" }); return }
             sendJson(res, 200, { ok: true, ...result })
         } catch (err) {
+            sendJson(res, 500, { error: err.message })
+        }
+        return
+    }
+
+    // ── Setup-auth proxies for agent CRUD ─────────────────────────────────────
+
+    if (req.method === "GET" && pathname === "/setup/agent/intents") {
+        try { sendJson(res, 200, { ok: true, intents: agentChain.getIntents() }) }
+        catch (err) { sendJson(res, 500, { error: err.message }) }
+        return
+    }
+
+    if (req.method === "GET" && pathname === "/setup/agent/tools") {
+        try { sendJson(res, 200, { ok: true, tools: agentChain.getTools() }) }
+        catch (err) { sendJson(res, 500, { error: err.message }) }
+        return
+    }
+
+    if (req.method === "POST" && pathname === "/setup/agent/intents") {
+        try {
+            const { name, tool, auth_required = false, hint } = await readBody(req)
+            if (!name || !tool) { sendJson(res, 400, { error: "name and tool required" }); return }
+            agentChain.addIntent(name, { tool, auth_required })
+            if (hint) agentChain.addIntentHint(name, hint)
+            sendJson(res, 200, { ok: true, intents: agentChain.getIntents() })
+        } catch (err) { sendJson(res, 500, { error: err.message }) }
+        return
+    }
+
+    if (req.method === "DELETE" && pathname.startsWith("/setup/agent/intents/")) {
+        try {
+            const name = decodeURIComponent(pathname.replace("/setup/agent/intents/", ""))
+            agentChain.deleteIntent(name)
+            sendJson(res, 200, { ok: true, intents: agentChain.getIntents() })
+        } catch (err) { sendJson(res, 400, { error: err.message }) }
+        return
+    }
+
+    if (req.method === "POST" && pathname === "/setup/agent/tools") {
+        try {
+            const { name, ...config } = await readBody(req)
+            if (!name || !config.type) { sendJson(res, 400, { error: "name and type required" }); return }
+            agentChain.addTool(name, config)
+            sendJson(res, 200, { ok: true, tools: agentChain.getTools() })
+        } catch (err) { sendJson(res, 500, { error: err.message }) }
+        return
+    }
+
+    if (req.method === "DELETE" && pathname.startsWith("/setup/agent/tools/")) {
+        try {
+            const name = decodeURIComponent(pathname.replace("/setup/agent/tools/", ""))
+            agentChain.deleteTool(name)
+            sendJson(res, 200, { ok: true, tools: agentChain.getTools() })
+        } catch (err) { sendJson(res, 400, { error: err.message }) }
+        return
+    }
+
+    // ── AI Field Generation ──────────────────────────────────────────────────
+
+    if (req.method === "POST" && pathname === "/setup/ai/generate-field") {
+        try {
+            const { field, context, workspaceId } = await readBody(req)
+            if (!field) { sendJson(res, 400, { error: "field required" }); return }
+            const profile = loadProfile(workspaceId || getActiveWorkspace())
+            const apiKey = profile.openaiKey || settings.llm?.api_key
+            if (!apiKey) { sendJson(res, 400, { error: "No OpenAI API key configured" }); return }
+            const { callGpt } = require("../setup/generate")
+            const biz = `${profile.businessName || "Business"} (${profile.businessType || "general"}). ${profile.description || ""}`.trim()
+            const prompts = {
+                description: { s: "You write concise business descriptions for AI agent profiles.", u: `Write a 2-3 sentence business description for: ${profile.businessName} (${profile.businessType}). Tagline: ${profile.brandTagline}. Audience: ${profile.targetAudience}. Offerings: ${profile.offerings}. Return ONLY the description text.` },
+                offerings: { s: "You write product/service catalog summaries.", u: `List the main offerings for: ${biz}. Website: ${profile.website}. Return a comma-separated plain text list of products/services.` },
+                faqSeed: { s: "You generate FAQ topic lists for customer service agents.", u: `List 10-15 common FAQ topics customers would ask about: ${biz}. Offerings: ${profile.offerings}. Return comma-separated topics only.` },
+                supportPolicy: { s: "You write customer support policies.", u: `Write a brief support policy (3-4 sentences) for: ${biz}. Hours: ${profile.businessHours}. Return ONLY the policy text.` },
+                escalationPolicy: { s: "You write escalation policies.", u: `Write a brief escalation policy (when to hand off to a human) for: ${biz}. Return ONLY the policy text.` },
+                refundPolicy: { s: "You write refund/return policies.", u: `Write a brief refund/return policy for: ${biz}. Fulfillment: ${profile.fulfillmentMode}. Return ONLY the policy text.` },
+                launchGoals: { s: "You define launch goals for AI business agents.", u: `Write 2-3 launch goals for an AI WhatsApp agent for: ${biz}. Return ONLY the goals text.` },
+                brandVoice: { s: "You define brand voice descriptors.", u: `Suggest a brand voice (3-5 adjectives) for: ${biz}. Audience: ${profile.targetAudience}. Return ONLY comma-separated adjectives.` },
+                promptGuide: { s: "You write system prompts for AI business agents.", u: `Write a system prompt for an AI agent handling: ${context || "general customer queries"} for ${biz}. Keep it under 200 words. Return ONLY the prompt text.` },
+                intentHint: { s: "You write intent classification hints.", u: `Write a one-sentence hint for classifying the intent "${context || "unknown"}" for: ${biz}. Return ONLY the hint sentence.` },
+            }
+            const p = prompts[field] || { s: "You are a helpful business assistant.", u: `Generate content for the "${field}" field of a business profile for: ${biz}. ${context || ""}. Return ONLY the content.` }
+            const result = await callGpt(apiKey, p.s, p.u)
+            sendJson(res, 200, { ok: true, field, result })
+        } catch (err) {
+            logger.error({ err }, "ai field generation failed")
             sendJson(res, 500, { error: err.message })
         }
         return

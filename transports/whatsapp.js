@@ -107,6 +107,7 @@ async function start() {
 
         const response = await agentChain.execute(text, phone)
         if (response) await sock.sendMessage(rawJid, { text: response })
+        debugInterceptor.logMessage(phone, text, response, null, "whatsapp")
     })
 }
 

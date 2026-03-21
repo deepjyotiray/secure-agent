@@ -82,7 +82,8 @@ function loadProfile(workspaceId = getActiveWorkspace()) {
 
 function saveProfile(profile, workspaceId = null) {
     const resolvedWorkspace = workspaceIdFromProfile({ ...profile, workspaceId: workspaceId || profile.workspaceId || getActiveWorkspace() })
-    const next = { ...DEFAULT_PROFILE, ...profile, workspaceId: resolvedWorkspace }
+    const existing = loadProfile(resolvedWorkspace)
+    const next = { ...DEFAULT_PROFILE, ...existing, ...profile, workspaceId: resolvedWorkspace }
     const targetPath = profilePath(resolvedWorkspace)
     ensureDir(targetPath)
     fs.writeFileSync(targetPath, JSON.stringify(next, null, 2))

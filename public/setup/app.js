@@ -453,15 +453,26 @@ function renderHeldMessages(held) {
 
 async function load() {
   const form = document.getElementById("profile-form")
-  const data = await api(withWorkspace("/setup/profile"))
-  activeWorkspace = data.activeWorkspace || activeWorkspace
-  applyProfile(form, data.profile)
-  fillList("files", data.draftFiles)
-  populateWorkspaceSelect(data, activeWorkspace)
-  setStatus("Profile loaded. Update the fields, save, then generate your draft agent pack.")
-  await loadGovernance()
-  await loadApprovals()
-  await loadDebugStatus()
+  try {
+    let data = await api(withWorkspace("/setup/profile"))
+    console.log("[load] first fetch workspace:", activeWorkspace, "got activeWorkspace:", data.activeWorkspace, "businessName:", data.profile?.businessName)
+    if (data.activeWorkspace && data.activeWorkspace !== activeWorkspace) {
+      activeWorkspace = data.activeWorkspace
+      data = await api(withWorkspace("/setup/profile"))
+      console.log("[load] re-fetch workspace:", activeWorkspace, "businessName:", data.profile?.businessName)
+    }
+    activeWorkspace = data.activeWorkspace || activeWorkspace
+    applyProfile(form, data.profile)
+    fillList("files", data.draftFiles)
+    populateWorkspaceSelect(data, activeWorkspace)
+    setStatus("Profile loaded. Update the fields, save, then generate your draft agent pack.")
+  } catch (err) {
+    console.error("[load] profile fetch failed:", err)
+    setStatus("Failed to load profile: " + err.message)
+  }
+  try { await loadGovernance() } catch (e) { console.error("[load] governance:", e) }
+  try { await loadApprovals() } catch (e) { console.error("[load] approvals:", e) }
+  try { await loadDebugStatus() } catch (e) { console.error("[load] debug:", e) }
   const log = document.getElementById("chat-log")
   log.innerHTML = ""
   appendChatMessage("agent", "Customer chat sandbox ready. Try a real customer-style question here.")

@@ -2,7 +2,6 @@
 
 const { exec } = require("child_process")
 const Database = require("better-sqlite3")
-const settings = require("../config/settings.json")
 const { complete } = require("../providers/llm")
 const { runAgentLoop } = require("./adminAgent")
 const { approveRequest, listApprovals } = require("./adminApprovals")
@@ -14,14 +13,13 @@ const { registerGuide } = require("../core/promptGuides")
 const { getPackForWorkspace } = require("../core/domainPacks")
 const logger = require("./logger")
 
-const DB_PATH = settings.admin.db_path
-
-const { keyword, pin, number: adminNumber } = settings.admin
+function getSettings() { return require("../config/settings.json") }
+function getAdminCfg() { return getSettings().admin }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 function isAdmin(phone) {
-    return String(phone).replace(/@.*$/, "").replace(/\D/g, "").endsWith(adminNumber.replace(/\D/g, ""))
+    return String(phone).replace(/@.*$/, "").replace(/\D/g, "").endsWith(String(getAdminCfg().number).replace(/\D/g, ""))
 }
 
 // Returns { isAdmin: true, mode, payload } or { isAdmin: false }
@@ -31,7 +29,7 @@ function parseAdminMessage(message) {
 
     // <keyword> <pin> <command or query>
     const parts = trimmed.split(/\s+/)
-    if (parts[0].toLowerCase() === keyword.toLowerCase() && parts[1] === pin) {
+    if (parts[0].toLowerCase() === getAdminCfg().keyword.toLowerCase() && parts[1] === getAdminCfg().pin) {
         return { isAdmin: true, payload: parts.slice(2).join(" ") }
     }
 
@@ -89,7 +87,7 @@ function genericDbContext(dbPath) {
 
 function buildDbContext(workspaceId) {
     const profile = loadProfile(workspaceId)
-    const dbPath = profile.dbPath || DB_PATH
+    const dbPath = profile.dbPath || getAdminCfg().db_path
 
     // try domain pack's context builder first
     try {
@@ -122,8 +120,8 @@ function getDbSchema(dbPath) {
 }
 
 async function queryWithLlm(question, dbContext, workspaceId) {
-    const businessName = settings.admin.business_name || "the business"
-    const dbPath = loadProfile(workspaceId).dbPath || DB_PATH
+    const businessName = getAdminCfg().business_name || "the business"
+    const dbPath = loadProfile(workspaceId).dbPath || getAdminCfg().db_path
     const schema = getDbSchema(dbPath)
     const now = new Date()
     const dd = String(now.getDate()).padStart(2, "0")
@@ -169,7 +167,10 @@ Question: ${question}`
     } finally { db.close() }
 
     // Step 3: summarise results
-    const answerPrompt = `You are an admin assistant for ${businessName}. Be concise, use ₹ for currency.
+    const profile = loadProfile(workspaceId)
+    const currency = profile.currency || ""
+    const currencyHint = currency ? ` Use ${currency} for currency.` : ""
+    const answerPrompt = `You are an admin assistant for ${businessName}. Be concise.${currencyHint}
 
 The admin asked: ${question}
 SQL used: ${sql}
@@ -185,7 +186,7 @@ Provide a clear, concise answer.`
 }
 
 async function summaryFallback(question, dbContext) {
-    const businessName = settings.admin.business_name || "the business"
+    const businessName = getAdminCfg().business_name || "the business"
     const prompt = `You are an admin assistant for ${businessName}.
 Answer the admin's question using ONLY the data provided below. Be concise and use numbers/facts directly.
 Do not make up data. If something is not in the data, say so.
@@ -206,7 +207,7 @@ Answer:`
 async function handleAdmin(payload, options = {}) {
     if (!payload) return "⚙️ Admin ready. Usage: `ray <pin> <command or question>`\n`ray <pin> agent <task>` for full agentic mode"
     const workspaceId = options.workspaceId || getActiveWorkspace()
-    const role = options.role || settings.admin?.role || "super_admin"
+    const role = options.role || getAdminCfg()?.role || "super_admin"
 
     logger.info({ payload }, "admin: handling request")
 
@@ -232,6 +233,12 @@ async function handleAdmin(payload, options = {}) {
         return await runAgentLoop(task, { workspaceId })
     }
 
+    // Auto-route mutations to agentic mode
+    if (/\b(add|record|insert|update|change|set|delete|remove|mark)\b/i.test(payload)) {
+        logger.info({ payload }, "admin: mutation detected, routing to agent")
+        return await runAgentLoop(payload, { workspaceId })
+    }
+
     if (looksLikeShell(payload)) {
         const result = await runShell(payload)
         return `\`\`\`\n${result}\n\`\`\``
@@ -247,12 +254,12 @@ async function handleAdmin(payload, options = {}) {
 
 async function handleAdminImage(imageBase64, caption, options = {}) {
     const workspaceId = options.workspaceId || getActiveWorkspace()
-    const cfg    = settings.admin.agent_llm || {}
+    const cfg    = getAdminCfg().agent_llm || {}
     const apiKey = cfg.api_key
     const model  = cfg.model || "gpt-4o-mini"
     const apiUrl = cfg.url || "https://api.openai.com/v1/chat/completions"
     const profile = loadProfile(workspaceId)
-    const dbPath = profile.dbPath || DB_PATH
+    const dbPath = profile.dbPath || getAdminCfg().db_path
 
     // resolve domain pack for vision prompt and insertion
     let pack = null

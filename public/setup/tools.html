@@ -1,0 +1,360 @@
+<!doctype html><html lang="en"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SecureAI — Agent Tools</title>
+  <link rel="stylesheet" href="/setup/assets/shared.css">
+  <style>
+    .detail-row{display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);font-size:0.84rem;cursor:pointer;gap:12px}
+    .detail-row:hover{background:rgba(124,111,247,.04);margin:0 -10px;padding:10px}
+    .detail-body{display:none;padding:10px 14px;margin:-1px 0 0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.8rem}
+    .detail-body.open{display:block}
+    .detail-body table{width:100%;border-collapse:collapse}
+    .detail-body td{padding:4px 8px;vertical-align:top;border-bottom:1px solid var(--border)}
+    .detail-body td:first-child{color:var(--muted);white-space:nowrap;width:130px;font-weight:500}
+    .detail-body td:last-child{word-break:break-all}
+    .cap-row{display:grid;grid-template-columns:1fr 90px 70px 100px 1fr auto;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.82rem}
+    .cap-row select,.cap-row input[type=text]{font-size:0.8rem;padding:3px 6px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm)}
+    .cap-header{font-weight:600;color:var(--muted);font-size:0.76rem;text-transform:uppercase;letter-spacing:.5px}
+    .ro-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px}
+    .ro-bar label{display:flex;align-items:center;gap:8px;font-size:0.88rem;font-weight:600;cursor:pointer}
+    .ro-bar .hint{font-size:0.78rem;color:var(--muted)}
+    .mut-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+    .mut-dot.yes{background:var(--red)}.mut-dot.no{background:var(--green)}
+  </style>
+</head><body>
+  <main class="page">
+    <div class="page-header"><h2>Agent Tools</h2><p>Manage intents, tools, capabilities, prompt guides, data model notes, and workers.</p></div>
+
+    <!-- Intents -->
+    <div class="card">
+      <div class="card-head"><h3>Intents</h3><button class="btn btn-ghost btn-sm" id="int-refresh">Refresh</button></div>
+      <div id="int-list"></div>
+      <details style="margin-top:12px">
+        <summary style="cursor:pointer;font-size:0.84rem;color:var(--accent);font-weight:600">+ Add Intent</summary>
+        <form id="int-add" style="display:grid;gap:8px;margin-top:8px">
+          <div class="form-grid">
+            <label class="field"><span>Name</span><input id="int-name" required></label>
+            <label class="field"><span>Tool</span><input id="int-tool" required></label>
+            <label class="field"><span>Hint</span><input id="int-hint"><button type="button" class="btn-ai" onclick="aiHint()">✦ AI</button></label>
+            <div class="toggle-row"><span>Auth required</span><input id="int-auth" type="checkbox"></div>
+          </div>
+          <button class="btn btn-primary btn-sm" type="submit">Add</button>
+        </form>
+      </details>
+    </div>
+
+    <!-- Tools -->
+    <div class="card">
+      <div class="card-head"><h3>Tools</h3><button class="btn btn-ghost btn-sm" id="tool-refresh">Refresh</button></div>
+      <div id="tool-list"></div>
+      <details style="margin-top:12px">
+        <summary style="cursor:pointer;font-size:0.84rem;color:var(--accent);font-weight:600">+ Add Tool</summary>
+        <form id="tool-add" style="display:grid;gap:8px;margin-top:8px">
+          <label class="field"><span>Tool config JSON</span><textarea id="tool-json" rows="4" placeholder='{"name":"myTool","type":"sqlite_query","db":"./data/orders.db"}'></textarea></label>
+          <button class="btn btn-primary btn-sm" type="submit">Add</button>
+        </form>
+      </details>
+    </div>
+
+    <!-- Capabilities (Governance Tools) -->
+    <div class="card">
+      <div class="card-head"><h3>Capabilities</h3><button class="btn btn-ghost btn-sm" id="cap-refresh">Refresh</button></div>
+      <div class="ro-bar">
+        <label><input type="checkbox" id="ro-toggle"> Read-Only Mode</label>
+        <span class="hint">All mutating tools require explicit approval</span>
+      </div>
+      <div class="cap-row cap-header">
+        <span>Tool</span><span>Category</span><span>Risk</span><span>Approval</span><span>Roles</span><span></span>
+      </div>
+      <div id="cap-list"></div>
+      <details style="margin-top:12px">
+        <summary style="cursor:pointer;font-size:0.84rem;color:var(--accent);font-weight:600">+ Add Capability</summary>
+        <form id="cap-add" style="display:grid;gap:8px;margin-top:8px">
+          <div class="form-grid">
+            <label class="field"><span>Tool name</span><input id="cap-name" required placeholder="e.g. my_tool"></label>
+            <label class="field"><span>Category</span><input id="cap-cat" required placeholder="e.g. data, system, browser"></label>
+            <label class="field"><span>Risk</span>
+              <select id="cap-risk"><option>low</option><option>medium</option><option selected>high</option><option>critical</option></select>
+            </label>
+            <label class="field"><span>Approval</span>
+              <select id="cap-appr"><option>none</option><option>task_intent</option><option selected>explicit</option></select>
+            </label>
+          </div>
+          <div class="form-grid">
+            <div class="toggle-row"><span>Mutating</span><input id="cap-mut" type="checkbox" checked></div>
+            <label class="field"><span>Roles (comma-separated)</span><input id="cap-roles" value="operator,super_admin,system_admin"></label>
+          </div>
+          <button class="btn btn-primary btn-sm" type="submit">Add</button>
+        </form>
+      </details>
+    </div>
+
+    <!-- Prompt Guides -->
+    <div class="card">
+      <div class="card-head"><h3>Prompt Guides</h3><button class="btn btn-ghost btn-sm" id="pg-refresh">Refresh</button></div>
+      <div id="pg-list"></div>
+      <details style="margin-top:12px">
+        <summary style="cursor:pointer;font-size:0.84rem;color:var(--accent);font-weight:600">+ Add Prompt Guide</summary>
+        <form id="pg-add" style="display:grid;gap:8px;margin-top:8px">
+          <div class="form-grid">
+            <label class="field"><span>ID</span><input id="pg-id" required placeholder="e.g. upsell-prompt"></label>
+            <label class="field"><span>Label</span><input id="pg-label" placeholder="Upsell Prompt"></label>
+          </div>
+          <label class="field"><span>Prompt</span><textarea id="pg-prompt" rows="4" required placeholder="System prompt text…"></textarea><button type="button" class="btn-ai" onclick="aiPrompt()">✦ AI Generate</button></label>
+          <button class="btn btn-primary btn-sm" type="submit">Add</button>
+        </form>
+      </details>
+    </div>
+
+    <!-- Data Model Notes -->
+    <div class="card">
+      <div class="card-head"><h3>Data Model Notes</h3>
+        <div class="btn-group"><button class="btn btn-ghost btn-sm" id="notes-refresh">Refresh</button><button class="btn btn-primary btn-sm" id="notes-regen">✦ Regenerate with AI</button></div>
+      </div>
+      <textarea id="notes-text" rows="8" style="width:100%"></textarea>
+      <div class="btn-group" style="margin-top:8px"><button class="btn btn-primary btn-sm" id="notes-save">Save</button></div>
+      <div class="status-box" id="notes-status" style="margin-top:8px"></div>
+    </div>
+
+    <!-- Workers -->
+    <div class="card">
+      <div class="card-head"><h3>Workers</h3><button class="btn btn-ghost btn-sm" id="wk-refresh">Refresh</button></div>
+      <ul class="item-list" id="wk-list"><li class="empty-msg">Loading…</li></ul>
+    </div>
+  </main>
+  <script src="/setup/assets/shared.js"></script>
+  <script>
+    buildShell("tools")
+
+    function detailTable(obj) {
+      var rows = ""
+      for (var k in obj) {
+        if (k === "name") continue
+        var v = obj[k]
+        if (v === null || v === undefined) continue
+        if (typeof v === "object") v = JSON.stringify(v, null, 2)
+        rows += "<tr><td>" + esc(k) + "</td><td>" + esc(String(v)) + "</td></tr>"
+      }
+      return rows ? "<table>" + rows + "</table>" : "<em style='color:var(--muted)'>No additional config</em>"
+    }
+
+    function toggleDetail(el) {
+      var body = el.nextElementSibling
+      if (body && body.classList.contains("detail-body")) body.classList.toggle("open")
+    }
+
+    // ── AI helpers ────────────────────────────────────────────────────────────
+    async function aiField(field, context) {
+      try {
+        var d = await api("/setup/ai/generate-field", "POST", { field: field, context: context, workspaceId: activeWorkspace })
+        return d.result || ""
+      } catch (e) { alert("AI failed: " + e.message); return "" }
+    }
+    async function aiHint() {
+      var name = $("int-name").value.trim()
+      if (!name) { alert("Enter an intent name first"); return }
+      $("int-hint").value = "Generating…"
+      $("int-hint").value = await aiField("intentHint", name)
+    }
+    async function aiPrompt() {
+      var id = $("pg-id").value.trim() || $("pg-label").value.trim()
+      $("pg-prompt").value = "Generating…"
+      $("pg-prompt").value = await aiField("promptGuide", id)
+    }
+
+    // ── Intents ──────────────────────────────────────────────────────────────
+    async function loadIntents() {
+      try {
+        var d = await api("/setup/agent/intents")
+        var el = $("int-list"); el.innerHTML = ""
+        for (var idx = 0; idx < (d.intents || []).length; idx++) {
+          var i = d.intents[idx]
+          var row = document.createElement("div")
+          row.className = "detail-row"
+          row.onclick = function() { toggleDetail(this) }
+          row.innerHTML = '<div style="flex:1"><code style="color:var(--accent)">' + esc(i.name) + '</code> → <code>' + esc(i.tool || "") + '</code> ' + (i.auth_required ? '<span class="badge badge-yellow">AUTH</span>' : "") + (i.hint ? ' <span style="color:var(--muted);font-size:0.78rem">— ' + esc(i.hint) + '</span>' : "") + '</div><button class="btn btn-red btn-sm int-del" data-name="' + esc(i.name) + '" onclick="event.stopPropagation()">✕</button>'
+          el.appendChild(row)
+          var body = document.createElement("div")
+          body.className = "detail-body"
+          body.innerHTML = detailTable(i)
+          el.appendChild(body)
+        }
+        if (!d.intents || !d.intents.length) el.innerHTML = '<div class="empty-msg">No intents</div>'
+        el.querySelectorAll(".int-del").forEach(function(b) { b.addEventListener("click", async function() {
+          if (!confirm("Delete intent " + b.dataset.name + "?")) return
+          try { await api("/setup/agent/intents/" + encodeURIComponent(b.dataset.name), "DELETE"); loadIntents() } catch(e) { alert(e.message) }
+        })})
+      } catch (e) { $("int-list").innerHTML = '<div class="empty-msg">Error: ' + esc(e.message) + '</div>' }
+    }
+    $("int-refresh").addEventListener("click", loadIntents)
+    $("int-add").addEventListener("submit", async function(e) {
+      e.preventDefault()
+      try {
+        await api("/setup/agent/intents", "POST", { name: $("int-name").value, tool: $("int-tool").value, auth_required: $("int-auth").checked, hint: $("int-hint").value })
+        $("int-name").value = ""; $("int-tool").value = ""; $("int-hint").value = ""
+        loadIntents()
+      } catch (e) { alert("Failed: " + e.message) }
+    })
+
+    // ── Tools ────────────────────────────────────────────────────────────────
+    async function loadTools() {
+      try {
+        var d = await api("/setup/agent/tools")
+        var el = $("tool-list"); el.innerHTML = ""
+        for (var idx = 0; idx < (d.tools || []).length; idx++) {
+          var t = d.tools[idx]
+          var row = document.createElement("div")
+          row.className = "detail-row"
+          row.onclick = function() { toggleDetail(this) }
+          row.innerHTML = '<div style="flex:1"><code style="color:var(--green)">' + esc(t.name) + '</code> <span class="badge badge-muted">' + esc(t.type || "") + '</span></div><button class="btn btn-red btn-sm tool-del" data-name="' + esc(t.name) + '" onclick="event.stopPropagation()">✕</button>'
+          el.appendChild(row)
+          var body = document.createElement("div")
+          body.className = "detail-body"
+          body.innerHTML = detailTable(t)
+          el.appendChild(body)
+        }
+        if (!d.tools || !d.tools.length) el.innerHTML = '<div class="empty-msg">No tools</div>'
+        el.querySelectorAll(".tool-del").forEach(function(b) { b.addEventListener("click", async function() {
+          if (!confirm("Delete tool " + b.dataset.name + "?")) return
+          try { await api("/setup/agent/tools/" + encodeURIComponent(b.dataset.name), "DELETE"); loadTools() } catch(e) { alert(e.message) }
+        })})
+      } catch (e) { $("tool-list").innerHTML = '<div class="empty-msg">Error: ' + esc(e.message) + '</div>' }
+    }
+    $("tool-refresh").addEventListener("click", loadTools)
+    $("tool-add").addEventListener("submit", async function(e) {
+      e.preventDefault()
+      try {
+        var body = JSON.parse($("tool-json").value)
+        await api("/setup/agent/tools", "POST", body)
+        $("tool-json").value = ""; loadTools()
+      } catch (e) { alert("Failed: " + e.message) }
+    })
+
+    // ── Capabilities ─────────────────────────────────────────────────────────
+    var _capTools = {}
+    async function loadCaps() {
+      try {
+        var d = await api(ws("/setup/governance"))
+        _capTools = d.tools || {}
+        var el = $("cap-list"); el.innerHTML = ""
+        var allMutExplicit = true
+        for (var name in _capTools) {
+          var c = _capTools[name]
+          if (c.mutating && c.approval !== "explicit") allMutExplicit = false
+          var row = document.createElement("div")
+          row.className = "cap-row"
+          row.innerHTML = '<div><span class="mut-dot ' + (c.mutating ? "yes" : "no") + '"></span><code>' + esc(name) + '</code></div>' +
+            '<span>' + esc(c.category || "") + '</span>' +
+            '<span class="badge badge-' + ({low:"muted",medium:"yellow",high:"red",critical:"red"}[c.risk]||"muted") + '">' + esc(c.risk || "") + '</span>' +
+            '<span class="badge badge-' + ({none:"muted",task_intent:"yellow",explicit:"red"}[c.approval]||"muted") + '">' + esc(c.approval || "") + '</span>' +
+            '<span style="font-size:0.76rem;color:var(--muted)">' + esc((c.roles||[]).join(", ")) + '</span>' +
+            '<button class="btn btn-red btn-sm cap-del" data-name="' + esc(name) + '">✕</button>'
+          el.appendChild(row)
+        }
+        if (!Object.keys(_capTools).length) el.innerHTML = '<div class="empty-msg">No capabilities defined</div>'
+        $("ro-toggle").checked = allMutExplicit && Object.keys(_capTools).length > 0
+        el.querySelectorAll(".cap-del").forEach(function(b) { b.addEventListener("click", async function() {
+          if (!confirm("Remove capability " + b.dataset.name + " from governance?")) return
+          try { await api("/setup/governance/tool/" + encodeURIComponent(b.dataset.name) + "?workspaceId=" + activeWorkspace, "DELETE"); loadCaps() } catch(e) { alert(e.message) }
+        })})
+      } catch (e) { $("cap-list").innerHTML = '<div class="empty-msg">Error: ' + esc(e.message) + '</div>' }
+    }
+    $("cap-refresh").addEventListener("click", loadCaps)
+
+    $("ro-toggle").addEventListener("change", async function(e) {
+      try {
+        await api("/setup/governance/read-only", "POST", { enabled: e.target.checked, workspaceId: activeWorkspace })
+        loadCaps()
+      } catch (err) { alert(err.message); e.target.checked = !e.target.checked }
+    })
+
+    $("cap-add").addEventListener("submit", async function(e) {
+      e.preventDefault()
+      var name = $("cap-name").value.trim()
+      if (!name) return
+      var tool = {}
+      tool[name] = {
+        category: $("cap-cat").value.trim(),
+        risk: $("cap-risk").value,
+        mutating: $("cap-mut").checked,
+        approval: $("cap-appr").value,
+        roles: $("cap-roles").value.split(",").map(function(r){return r.trim()}).filter(Boolean)
+      }
+      try {
+        await api("/setup/governance/policy", "POST", { tools: tool, workspaceId: activeWorkspace })
+        $("cap-name").value = ""; loadCaps()
+      } catch (e) { alert("Failed: " + e.message) }
+    })
+
+    // ── Prompt Guides ────────────────────────────────────────────────────────
+    async function loadGuides() {
+      try {
+        var d = await api(ws("/setup/agent/prompts"))
+        var el = $("pg-list"); el.innerHTML = ""
+        var guides = [].concat(d.builtIn || [], d.custom || [])
+        for (var g of guides) {
+          var isCustom = (d.custom || []).some(function(c) { return c.id === g.id })
+          var div = document.createElement("div")
+          div.style.cssText = "padding:10px 0;border-bottom:1px solid var(--border)"
+          div.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center"><div><code style="color:var(--accent)">' + esc(g.id) + '</code> ' + (g.label ? '<span style="color:var(--muted);font-size:0.82rem">— ' + esc(g.label) + '</span>' : "") + (isCustom ? ' <span class="badge badge-blue">CUSTOM</span>' : "") + '</div>' + (isCustom ? '<button class="btn btn-red btn-sm pg-del" data-id="' + esc(g.id) + '">Delete</button>' : "") + '</div><div style="font-size:0.82rem;color:var(--muted);margin-top:4px;max-height:60px;overflow:hidden">' + esc((g.prompt || "").slice(0, 200)) + '</div>'
+          el.appendChild(div)
+        }
+        if (!guides.length) el.innerHTML = '<div class="empty-msg">No prompt guides</div>'
+        el.querySelectorAll(".pg-del").forEach(function(b) { b.addEventListener("click", async function() {
+          if (!confirm("Delete guide " + b.dataset.id + "?")) return
+          try { await api("/setup/agent/prompts", "DELETE", {id: b.dataset.id, workspaceId: activeWorkspace}); loadGuides() } catch(e) { alert(e.message) }
+        })})
+      } catch (e) { $("pg-list").innerHTML = '<div class="empty-msg">Error: ' + esc(e.message) + '</div>' }
+    }
+    $("pg-refresh").addEventListener("click", loadGuides)
+    $("pg-add").addEventListener("submit", async function(e) {
+      e.preventDefault()
+      try {
+        await api("/setup/agent/prompts", "POST", {id: $("pg-id").value, label: $("pg-label").value, prompt: $("pg-prompt").value, workspaceId: activeWorkspace})
+        $("pg-id").value = ""; $("pg-label").value = ""; $("pg-prompt").value = ""
+        loadGuides()
+      } catch(e) { alert(e.message) }
+    })
+
+    // ── Data Model Notes ─────────────────────────────────────────────────────
+    async function loadNotes() {
+      try {
+        var d = await api(ws("/setup/agent/notes"))
+        $("notes-text").value = d.notes || ""
+        setText("notes-status", "Loaded.")
+      } catch (e) { setText("notes-status", "Error: " + e.message) }
+    }
+    $("notes-refresh").addEventListener("click", loadNotes)
+    $("notes-save").addEventListener("click", async function() {
+      try {
+        await api("/setup/agent/notes", "POST", {notes: $("notes-text").value, workspaceId: activeWorkspace})
+        setText("notes-status", "✓ Saved.")
+      } catch(e) { setText("notes-status", "✗ " + e.message) }
+    })
+    $("notes-regen").addEventListener("click", async function() {
+      setText("notes-status", "Regenerating with AI…")
+      try {
+        var d = await api("/setup/agent/notes/regenerate", "POST", {workspaceId: activeWorkspace})
+        $("notes-text").value = d.notes || ""
+        setText("notes-status", "✓ Regenerated.")
+      } catch(e) { setText("notes-status", "✗ " + e.message) }
+    })
+
+    // ── Workers ──────────────────────────────────────────────────────────────
+    async function loadWorkers() {
+      try {
+        var d = await api("/setup/workers")
+        var el = $("wk-list"); el.innerHTML = ""
+        for (var w of (d.workers || [])) {
+          var li = document.createElement("li")
+          li.textContent = typeof w === "string" ? w : JSON.stringify(w)
+          el.appendChild(li)
+        }
+        if (!el.children.length) el.innerHTML = '<li class="empty-msg">No workers registered</li>'
+      } catch(e) { $("wk-list").innerHTML = '<li class="empty-msg">Error: ' + esc(e.message) + '</li>' }
+    }
+    $("wk-refresh").addEventListener("click", loadWorkers)
+
+    window.onWorkspaceChange = function() { loadIntents(); loadTools(); loadCaps(); loadGuides(); loadNotes() }
+    initWorkspace().then(function() { loadIntents(); loadTools(); loadCaps(); loadGuides(); loadNotes(); loadWorkers() })
+  </script>
+</body></html>

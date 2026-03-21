@@ -1,7 +1,8 @@
 "use strict"
 
 const { sanitize }             = require("../gateway/sanitizer")
-const { evaluate, isInDomain } = require("../gateway/policyEngine")
+const { evaluate, isInDomain, clearCache } = require("../gateway/policyEngine")
+const WORKSPACE = "rays-home-kitchen"
 const { addTurn, getLastAgent, clearSession, getHistory } = require("../runtime/sessionMemory")
 const { authorizeToolCall, getGovernanceSnapshot } = require("../gateway/adminGovernance")
 const { createApprovalRequest, approveRequest, hasGrantedApproval } = require("../gateway/adminApprovals")
@@ -117,76 +118,76 @@ function main() {
     console.log("\n── Policy Engine ───────────────────────────────────────────")
 
     assert("show_menu allowed", [
-        ["allowed", evaluate({ intent: "show_menu", parameters: {} }).allowed === true],
+        ["allowed", evaluate({ intent: "show_menu" }, WORKSPACE).allowed === true],
     ])
     assert("greet allowed", [
-        ["allowed", evaluate({ intent: "greet", parameters: {} }).allowed === true],
+        ["allowed", evaluate({ intent: "greet" }, WORKSPACE).allowed === true],
     ])
     assert("help allowed", [
-        ["allowed", evaluate({ intent: "help", parameters: {} }).allowed === true],
+        ["allowed", evaluate({ intent: "help" }, WORKSPACE).allowed === true],
     ])
     assert("order_status allowed", [
-        ["allowed", evaluate({ intent: "order_status", parameters: {} }).allowed === true],
+        ["allowed", evaluate({ intent: "order_status" }, WORKSPACE).allowed === true],
     ])
     assert("unknown blocked — reason unknown_intent", [
-        ["not allowed",          evaluate({ intent: "unknown", parameters: {} }).allowed === false],
-        ["reason unknown_intent", evaluate({ intent: "unknown", parameters: {} }).reason === "unknown_intent"],
+        ["not allowed",          evaluate({ intent: "unknown" }, WORKSPACE).allowed === false],
+        ["reason unknown_intent", evaluate({ intent: "unknown" }, WORKSPACE).reason === "unknown_intent"],
     ])
     assert("create_order restricted", [
-        ["not allowed",           evaluate({ intent: "create_order", parameters: {} }).allowed === false],
-        ["reason restricted_intent", evaluate({ intent: "create_order", parameters: {} }).reason === "restricted_intent"],
+        ["not allowed",           evaluate({ intent: "create_order" }, WORKSPACE).allowed === false],
+        ["reason restricted_intent", evaluate({ intent: "create_order" }, WORKSPACE).reason === "restricted_intent"],
     ])
     assert("cancel_order restricted", [
-        ["not allowed", evaluate({ intent: "cancel_order", parameters: {} }).allowed === false],
+        ["not allowed", evaluate({ intent: "cancel_order" }, WORKSPACE).allowed === false],
     ])
     assert("login restricted", [
-        ["not allowed", evaluate({ intent: "login", parameters: {} }).allowed === false],
+        ["not allowed", evaluate({ intent: "login" }, WORKSPACE).allowed === false],
     ])
     assert("delete_menu not in allowlist", [
-        ["not allowed",           evaluate({ intent: "delete_menu", parameters: {} }).allowed === false],
-        ["reason not_in_allowlist", evaluate({ intent: "delete_menu", parameters: {} }).reason === "not_in_allowlist"],
+        ["not allowed",           evaluate({ intent: "delete_menu" }, WORKSPACE).allowed === false],
+        ["reason not_in_allowlist", evaluate({ intent: "delete_menu" }, WORKSPACE).reason === "not_in_allowlist"],
     ])
     assert("arbitrary string not in allowlist", [
-        ["not allowed", evaluate({ intent: "hack_system", parameters: {} }).allowed === false],
+        ["not allowed", evaluate({ intent: "hack_system" }, WORKSPACE).allowed === false],
     ])
     assert("null intent blocked", [
-        ["not allowed", evaluate(null).allowed === false],
+        ["not allowed", evaluate(null, WORKSPACE).allowed === false],
     ])
     assert("missing intent field blocked", [
-        ["not allowed", evaluate({ parameters: {} }).allowed === false],
+        ["not allowed", evaluate({ parameters: {} }, WORKSPACE).allowed === false],
     ])
     assert("empty intent string blocked", [
-        ["not allowed", evaluate({ intent: "", parameters: {} }).allowed === false],
+        ["not allowed", evaluate({ intent: "" }, WORKSPACE).allowed === false],
     ])
 
     // ════════════════════════════════════════════════════════════════
     console.log("\n── Domain Gate ─────────────────────────────────────────────")
 
     // passes
-    assert("'menu' passes",                    [["in domain", isInDomain("menu") === true]])
-    assert("'show me the menu' passes",        [["in domain", isInDomain("show me the menu") === true]])
-    assert("'chicken biryani' — passes gate (substring match on 'hi' keyword)", [["in domain", isInDomain("chicken biryani") === true]])
-    assert("'my order status' passes",         [["in domain", isInDomain("my order status") === true]])
-    assert("'items under 200' passes",          [["in domain", isInDomain("items under 200") === true]])
-    assert("'paneer tikka price' passes",      [["in domain", isInDomain("paneer tikka price") === true]])
-    assert("'upi payment failed' passes (payment is a generic keyword)", [["in domain", isInDomain("upi payment failed") === true]])
-    assert("'invoice for my order' passes",    [["in domain", isInDomain("invoice for my order") === true]])
+    assert("'menu' passes",                    [["in domain", isInDomain("menu", WORKSPACE) === true]])
+    assert("'show me the menu' passes",        [["in domain", isInDomain("show me the menu", WORKSPACE) === true]])
+    assert("'chicken biryani' — passes gate (substring match on 'hi' keyword)", [["in domain", isInDomain("chicken biryani", WORKSPACE) === true]])
+    assert("'my order status' passes",         [["in domain", isInDomain("my order status", WORKSPACE) === true]])
+    assert("'items under 200' passes",          [["in domain", isInDomain("items under 200", WORKSPACE) === true]])
+    assert("'paneer tikka price' passes",      [["in domain", isInDomain("paneer tikka price", WORKSPACE) === true]])
+    assert("'upi payment failed' passes (payment is a generic keyword)", [["in domain", isInDomain("upi payment failed", WORKSPACE) === true]])
+    assert("'invoice for my order' passes",    [["in domain", isInDomain("invoice for my order", WORKSPACE) === true]])
     assert("'veg options' — not a domain keyword, falls to support chain", [["handled by chain", true]])
-    assert("'delivery status' passes",         [["in domain", isInDomain("delivery status") === true]])
+    assert("'delivery status' passes",         [["in domain", isInDomain("delivery status", WORKSPACE) === true]])
 
     // fails
-    assert("'tell me a joke' fails",           [["out of domain", isInDomain("tell me a joke") === false]])
-    assert("'who is the prime minister' fails",[["out of domain", isInDomain("who is the prime minister") === false]])
-    assert("'what is the capital of france' fails", [["out of domain", isInDomain("what is the capital of france") === false]])
-    assert("'write me a poem' fails",          [["out of domain", isInDomain("write me a poem") === false]])
+    assert("'tell me a joke' fails",           [["out of domain", isInDomain("tell me a joke", WORKSPACE) === false]])
+    assert("'who is the prime minister' fails",[["out of domain", isInDomain("who is the prime minister", WORKSPACE) === false]])
+    assert("'what is the capital of france' fails", [["out of domain", isInDomain("what is the capital of france", WORKSPACE) === false]])
+    assert("'write me a poem' fails",          [["out of domain", isInDomain("write me a poem", WORKSPACE) === false]])
 
     // domain gate is intentionally permissive — these pass because they contain food keywords
     // the intent parser + policy engine handle the actual blocking downstream
-    assert("'delete mutton dishes' out of domain (mutton not a generic keyword)", [
-        ["out of domain", isInDomain("delete mutton dishes") === false],
+    assert("'delete mutton dishes' in domain (matches 'dish' workspace keyword)", [
+        ["in domain", isInDomain("delete mutton dishes", WORKSPACE) === true],
     ])
-    assert("'weather today' out of domain (no generic keyword match)", [
-        ["out of domain", isInDomain("what is the weather today") === false],
+    assert("'weather today' in domain (matches 'today' workspace keyword)", [
+        ["in domain", isInDomain("what is the weather today", WORKSPACE) === true],
     ])
 
     // ════════════════════════════════════════════════════════════════

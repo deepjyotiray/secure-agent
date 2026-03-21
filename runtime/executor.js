@@ -1,6 +1,23 @@
 "use strict"
 
 const logger = require("../gateway/logger")
+const { getActiveWorkspace } = require("../core/workspace")
+
+let _cachedProfile = null
+let _cachedWorkspace = null
+
+function getProfile() {
+    const ws = getActiveWorkspace()
+    if (_cachedWorkspace === ws && _cachedProfile) return _cachedProfile
+    try {
+        const { loadProfile } = require("../setup/profileService")
+        _cachedProfile = loadProfile(ws)
+        _cachedWorkspace = ws
+    } catch { _cachedProfile = {} }
+    return _cachedProfile
+}
+
+function invalidateProfileCache() { _cachedProfile = null; _cachedWorkspace = null }
 
 // built-in tool types — always available, eagerly loaded
 const CORE_TOOLS = {
@@ -33,6 +50,23 @@ function resolveToolHandler(type) {
     return _dynamicTypes.get(type) || CORE_TOOLS[type] || null
 }
 
+const SKIP_PROFILE_KEYS = new Set(["workspaceId", "domainPack", "agentManifest", "openaiKey", "scrapeWebsite", "customFields"])
+
+function buildProfileFacts(profile, toolName) {
+    const lines = []
+    for (const [k, v] of Object.entries(profile)) {
+        if (!v || SKIP_PROFILE_KEYS.has(k) || typeof v !== "string") continue
+        lines.push(`- ${k}: ${v}`)
+    }
+    const custom = Array.isArray(profile.customFields) ? profile.customFields : []
+    for (const f of custom) {
+        if (!f.key || !f.value) continue
+        if (f.tools && f.tools.length && !f.tools.includes(toolName)) continue
+        lines.push(`- ${f.key}: ${f.value}`)
+    }
+    return lines.join("\n") || "No profile data available."
+}
+
 async function execute(manifest, intent, context) {
     const intentConfig = manifest.intents[intent.intent]
     if (!intentConfig) {
@@ -54,8 +88,9 @@ async function execute(manifest, intent, context) {
     }
 
     logger.info({ intent: intent.intent, tool: toolName }, "executor: dispatching")
-    // pass filter as params so all tools receive it consistently
+    context.profile = getProfile()
+    context.profileFacts = buildProfileFacts(context.profile, toolName)
     return await tool.execute(intent.filter || {}, context, toolConfig)
 }
 
-module.exports = { execute, registerToolType, resolveToolHandler }
+module.exports = { execute, registerToolType, resolveToolHandler, invalidateProfileCache }

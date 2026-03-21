@@ -1,0 +1,194 @@
+<!doctype html><html lang="en"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SecureAI — Profile</title>
+  <link rel="stylesheet" href="/setup/assets/shared.css">
+</head><body>
+  <main class="page" id="page">
+    <div class="page-header"><h2>Business Profile</h2><p>Configure your business details. Save, generate a draft agent pack, then promote it live.</p></div>
+
+    <div class="card">
+      <div class="card-head"><h3>Workspace</h3></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+        <label class="field" style="flex:1;min-width:200px"><span>New workspace ID</span><input id="new-ws" placeholder="e.g. glowcare-clinic"></label>
+        <button class="btn btn-ghost" id="create-ws-btn">Create</button>
+      </div>
+    </div>
+
+    <form id="pf" class="card" style="padding-bottom:24px">
+      <div class="form-section-label" style="border:0;padding-top:0;margin-top:0">Brand</div>
+      <div class="form-grid">
+        <label class="field"><span>Business name</span><input name="businessName" required></label>
+        <label class="field"><span>Business type</span><input name="businessType" placeholder="restaurant, salon, clinic…"></label>
+        <label class="field"><span>Brand tagline</span><input name="brandTagline"></label>
+        <label class="field"><span>Brand voice</span><input name="brandVoice" placeholder="warm, crisp, premium…"><button type="button" class="btn-ai" onclick="aiGen('brandVoice')">✦ AI</button></label>
+        <label class="field wide"><span>Target audience</span><input name="targetAudience"></label>
+        <label class="field wide"><span>Description</span><textarea name="description" rows="3"></textarea><button type="button" class="btn-ai" onclick="aiGen('description')">✦ AI</button></label>
+        <label class="field wide"><span>Launch goals</span><textarea name="launchGoals" rows="2"></textarea><button type="button" class="btn-ai" onclick="aiGen('launchGoals')">✦ AI</button></label>
+      </div>
+
+      <div class="form-section"><div class="form-section-label">Operations</div></div>
+      <div class="form-grid">
+        <label class="field"><span>Website</span><input name="website" placeholder="https://…"></label>
+        <label class="field"><span>Website notes</span><input name="websiteNotes"></label>
+        <label class="field"><span>Country code</span><input name="countryCode" value="91"></label>
+        <label class="field"><span>Currency</span><input name="currency" value="₹"></label>
+        <label class="field"><span>Language</span><input name="language" value="English"></label>
+        <label class="field"><span>Timezone</span><input name="timezone" value="Asia/Kolkata"></label>
+        <label class="field"><span>Contact email</span><input name="contactEmail"></label>
+        <label class="field"><span>Contact phone</span><input name="contactPhone"></label>
+        <label class="field wide"><span>Address</span><input name="address"></label>
+        <label class="field wide"><span>Service areas</span><textarea name="serviceAreas" rows="2"></textarea></label>
+        <label class="field wide"><span>Business hours</span><textarea name="businessHours" rows="2"></textarea></label>
+        <label class="field wide"><span>Holidays / closures</span><textarea name="holidays" rows="2"></textarea></label>
+      </div>
+
+      <div class="form-section"><div class="form-section-label">Products & Fulfillment</div></div>
+      <div class="form-grid">
+        <label class="field wide"><span>Offerings / catalog</span><textarea name="offerings" rows="4"></textarea><button type="button" class="btn-ai" onclick="aiGen('offerings')">✦ AI</button></label>
+        <label class="field wide"><span>Catalog notes</span><textarea name="catalogNotes" rows="2"></textarea></label>
+        <label class="field wide"><span>Pricing notes</span><textarea name="pricingNotes" rows="2"></textarea></label>
+        <label class="field"><span>Fulfillment mode</span><input name="fulfillmentMode" placeholder="delivery, pickup, appointments…"></label>
+        <label class="field"><span>Ordering flow</span><input name="orderingFlow"></label>
+        <label class="field wide"><span>Booking flow</span><textarea name="bookingFlow" rows="2"></textarea></label>
+        <label class="field wide"><span>Payment methods</span><textarea name="paymentMethods" rows="2"></textarea></label>
+      </div>
+
+      <div class="form-section"><div class="form-section-label">Support & Policy</div></div>
+      <div class="form-grid">
+        <label class="field wide"><span>FAQ seed topics</span><textarea name="faqSeed" rows="3"></textarea><button type="button" class="btn-ai" onclick="aiGen('faqSeed')">✦ AI</button></label>
+        <label class="field wide"><span>Support policy</span><textarea name="supportPolicy" rows="2"></textarea><button type="button" class="btn-ai" onclick="aiGen('supportPolicy')">✦ AI</button></label>
+        <label class="field wide"><span>Escalation policy</span><textarea name="escalationPolicy" rows="2"></textarea><button type="button" class="btn-ai" onclick="aiGen('escalationPolicy')">✦ AI</button></label>
+        <label class="field wide"><span>Refund / return policy</span><textarea name="refundPolicy" rows="2"></textarea><button type="button" class="btn-ai" onclick="aiGen('refundPolicy')">✦ AI</button></label>
+        <label class="field wide"><span>Customer data rules</span><textarea name="customerDataRules" rows="2"></textarea></label>
+        <label class="field wide"><span>Compliance / safety</span><textarea name="complianceNotes" rows="2"></textarea></label>
+      </div>
+
+      <div class="form-section"><div class="form-section-label">Integrations & Knowledge</div></div>
+      <div class="form-grid">
+        <label class="field"><span>SQLite DB path</span><input name="dbPath"></label>
+        <label class="field"><span>Support tickets file</span><input name="ticketsFile"></label>
+        <label class="field"><span>Extra context file</span><input name="extraContext"></label>
+        <label class="field"><span>Knowledge URLs</span><input name="knowledgeUrls"></label>
+        <label class="field wide"><span>Integrations</span><textarea name="integrations" rows="2"></textarea></label>
+        <div class="toggle-row wide"><span>Scrape website for context</span><input name="scrapeWebsite" type="checkbox" checked></div>
+      </div>
+
+      <div class="form-section"><div class="form-section-label">Admin & Security</div></div>
+      <div class="form-grid">
+        <label class="field"><span>Admin phone</span><input name="adminPhone"></label>
+        <label class="field"><span>Escalation phone</span><input name="escalationPhone"></label>
+        <label class="field"><span>Admin keyword</span><input name="adminKeyword" value="admin"></label>
+        <label class="field"><span>Admin PIN</span><input name="adminPin" type="password"></label>
+        <label class="field wide"><span>OpenAI API key</span><input name="openaiKey" type="password" placeholder="sk-…"></label>
+      </div>
+    </form>
+
+    <div class="btn-group" style="margin-bottom:16px">
+      <button class="btn btn-ghost" id="save-btn">Save Profile</button>
+      <button class="btn btn-primary" id="gen-btn">Generate Draft</button>
+      <button class="btn btn-green" id="promote-btn">Promote Live</button>
+    </div>
+
+    <div class="progress-shell hidden" id="gen-progress">
+      <div class="progress-head"><strong id="gen-label">Preparing…</strong><span id="gen-pct">0%</span></div>
+      <div class="progress-track"><div class="progress-bar" id="gen-bar"></div></div>
+    </div>
+    <div class="status-box" id="status">Loading profile…</div>
+
+    <div class="card-grid" style="margin-top:16px">
+      <div class="card"><div class="card-head"><h3>Detected Intents</h3></div><ul class="item-list" id="intents"><li class="empty-msg">Generate a draft first</li></ul></div>
+      <div class="card"><div class="card-head"><h3>FAQ Topics</h3></div><ul class="item-list" id="faqs"><li class="empty-msg">Generate a draft first</li></ul></div>
+    </div>
+    <div class="card"><div class="card-head"><h3>Draft Files</h3></div><ul class="item-list" id="files"><li class="empty-msg">No draft files yet</li></ul></div>
+  </main>
+  <script src="/setup/assets/shared.js"></script>
+  <script>
+    buildShell("profile")
+    const form = $("pf")
+
+    function applyProfile(p) {
+      for (const [k, v] of Object.entries(p || {})) {
+        const f = form.elements[k]; if (!f) continue
+        if (f.type === "checkbox") f.checked = !!v; else f.value = v || ""
+      }
+    }
+    function formData() {
+      const fd = new FormData(form)
+      const d = Object.fromEntries(fd.entries())
+      d.scrapeWebsite = form.elements.scrapeWebsite.checked
+      return d
+    }
+    function fillList(id, items) {
+      const el = $(id); el.innerHTML = ""
+      const list = items?.length ? items : ["Nothing yet"]
+      for (const i of list) { const li = document.createElement("li"); li.textContent = i; el.appendChild(li) }
+    }
+
+    async function load() {
+      try {
+        let data = await api(ws("/setup/profile"))
+        if (data.activeWorkspace && data.activeWorkspace !== activeWorkspace) {
+          activeWorkspace = data.activeWorkspace
+          data = await api(ws("/setup/profile"))
+        }
+        activeWorkspace = data.activeWorkspace || activeWorkspace
+        applyProfile(data.profile)
+        fillList("files", data.draftFiles)
+        setText("status", "Profile loaded.")
+      } catch (e) { setText("status", "Failed: " + e.message) }
+    }
+    window.onWorkspaceChange = load
+
+    $("save-btn").addEventListener("click", async () => {
+      setText("status", "Saving…")
+      const p = formData(); p.workspaceId = activeWorkspace
+      await api("/setup/profile", "POST", p)
+      setText("status", "✓ Profile saved.")
+    })
+
+    let _genTimer
+    $("gen-btn").addEventListener("click", async () => {
+      setText("status", "Generating draft…")
+      show("gen-progress"); let pct = 5
+      $("gen-bar").style.width = pct + "%"; setText("gen-pct", pct + "%"); setText("gen-label", "Gathering context…")
+      _genTimer = setInterval(() => { if (pct < 90) { pct += 4; $("gen-bar").style.width = pct + "%"; setText("gen-pct", Math.round(pct) + "%") } }, 500)
+      try {
+        const p = formData(); p.workspaceId = activeWorkspace
+        const d = await api("/setup/generate", "POST", p)
+        fillList("files", d.draftFiles); fillList("intents", d.intents); fillList("faqs", d.faqTopics)
+        setText("status", "✓ Draft generated. Keywords: " + (d.keywordCount || 0))
+      } catch (e) { setText("status", "✗ " + e.message) }
+      finally { clearInterval(_genTimer); $("gen-bar").style.width = "100%"; setText("gen-pct", "100%"); setTimeout(() => hide("gen-progress"), 1200) }
+    })
+
+    $("promote-btn").addEventListener("click", async () => {
+      setText("status", "Promoting…")
+      try {
+        const d = await api("/setup/promote", "POST", { workspaceId: activeWorkspace })
+        fillList("files", d.files)
+        setText("status", "✓ Promoted " + d.promoted + " files live.")
+      } catch (e) { setText("status", "✗ " + e.message) }
+    })
+
+    $("create-ws-btn").addEventListener("click", async () => {
+      const id = $("new-ws").value.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-") || "default"
+      const p = formData(); p.workspaceId = id; p.businessName = p.businessName || id
+      await api("/setup/profile", "POST", p)
+      await api("/setup/workspace/select", "POST", { workspaceId: id })
+      activeWorkspace = id; $("new-ws").value = ""
+      await initWorkspace(); await load()
+    })
+
+    initWorkspace().then(load)
+
+    async function aiGen(field) {
+      const f = form.elements[field]
+      const prev = f?.value || ""
+      if (f) f.value = "Generating…"
+      try {
+        const d = await api("/setup/ai/generate-field", "POST", { field, workspaceId: activeWorkspace })
+        if (f) f.value = d.result || prev
+      } catch (e) { if (f) f.value = prev; alert("AI generation failed: " + e.message) }
+    }
+  </script>
+</body></html>

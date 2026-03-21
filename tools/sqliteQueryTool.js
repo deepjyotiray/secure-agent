@@ -42,7 +42,8 @@ async function execute(filter, context, toolConfig) {
     const db = getDb(db_path)
     try {
         const schema = getSchema(db)
-        const businessName = toolConfig.business_name || "the business"
+        const wp = context.profile || {}
+        const businessName = toolConfig.business_name || wp.businessName || "the business"
 
         const sqlPrompt = `You are a SQLite expert for ${businessName}.
 Today is ${new Date().toISOString().slice(0, 10)}.

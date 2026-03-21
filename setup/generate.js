@@ -273,4 +273,4 @@ async function generate(inputs) {
     return { slug, draftDir, manifestObj, faqObj, policyObj }
 }
 
-module.exports = { generate }
+module.exports = { generate, callGpt }

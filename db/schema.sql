@@ -5,44 +5,106 @@ CREATE TABLE users (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE patients (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    date_of_birth DATE,
-    gender TEXT,
-    address TEXT,
+CREATE TABLE orders (
+    id TEXT PRIMARY KEY,
+    order_date TEXT NOT NULL,
+    order_time TEXT NOT NULL,
+    order_for TEXT NOT NULL,
+    customer_name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    address TEXT NOT NULL,
+    notes TEXT,
+    items TEXT NOT NULL,
+    extras TEXT,
+    total INTEGER NOT NULL,
+    status TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    email_sent INTEGER DEFAULT 0,
+    email_error TEXT,
+    customer_message TEXT,
+    view_token TEXT,
+    coupon_code TEXT,
+    coupon_discount INTEGER DEFAULT 0,
+    delivery_charge INTEGER DEFAULT 0,
+    expected_delivery TEXT,
+    expected_delivery_iso TEXT,
+    location_url TEXT,
+    location_lat REAL,
+    location_lng REAL,
+    location_accuracy REAL,
+    delivery_distance_km REAL,
+    payment_status TEXT,
+    delivery_status TEXT,
+    amount_paid INTEGER DEFAULT 0
 );
 
-CREATE TABLE doctors (
+CREATE TABLE menu_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    section_id INTEGER NOT NULL,
     name TEXT NOT NULL,
-    specialty TEXT NOT NULL,
-    phone TEXT NOT NULL UNIQUE,
+    price INTEGER NOT NULL,
+    veg INTEGER NOT NULL,
+    description TEXT,
+    position INTEGER,
+    available INTEGER DEFAULT 1,
+    calories INTEGER,
+    protein INTEGER,
+    carbs INTEGER,
+    fat INTEGER,
+    image TEXT,
+    served_with TEXT,
+    customizations TEXT
+);
+
+CREATE TABLE menu_sections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    menu_type TEXT NOT NULL,
+    section_key TEXT NOT NULL,
+    title TEXT NOT NULL,
+    subheading TEXT,
+    position INTEGER,
+    available INTEGER DEFAULT 1,
+    image TEXT
+);
+
+CREATE TABLE subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    address TEXT NOT NULL,
+    item_name TEXT NOT NULL,
+    total_deliveries INTEGER NOT NULL,
+    deliveries_used INTEGER DEFAULT 0,
+    order_id TEXT,
+    start_date TEXT NOT NULL,
+    expires_date TEXT NOT NULL,
+    status TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE appointments (
+CREATE TABLE subscription_deliveries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_id INTEGER NOT NULL,
-    doctor_id INTEGER NOT NULL,
-    appointment_date DATETIME NOT NULL,
-    status TEXT NOT NULL DEFAULT 'scheduled',
+    subscription_id INTEGER NOT NULL,
+    delivery_date TEXT NOT NULL,
+    notes TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (patient_id) REFERENCES patients(id),
-    FOREIGN KEY (doctor_id) REFERENCES doctors(id)
+    FOREIGN KEY (subscription_id) REFERENCES subscriptions(id)
 );
 
-CREATE TABLE inventory (
+CREATE TABLE coupons (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    product_name TEXT NOT NULL,
-    quantity INTEGER NOT NULL DEFAULT 0,
-    price REAL NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    code TEXT NOT NULL UNIQUE,
+    discount INTEGER NOT NULL,
+    min_order INTEGER NOT NULL,
+    free_delivery INTEGER DEFAULT 0,
+    active INTEGER DEFAULT 1,
+    usage_count INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    is_percent INTEGER DEFAULT 0,
+    max_discount INTEGER,
+    free_delivery_only INTEGER DEFAULT 0
 );
 
-CREATE INDEX idx_users_mobile ON users(mobile);
-CREATE INDEX idx_doctors_phone ON doctors(phone);
-CREATE INDEX idx_appointments_status ON appointments(status);
-CREATE INDEX idx_appointments_date ON appointments(appointment_date);
+CREATE INDEX idx_orders_phone ON orders(phone);
+CREATE INDEX idx_orders_status ON orders(status);
+CREATE INDEX idx_orders_created_at ON orders(created_at);

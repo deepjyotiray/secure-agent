@@ -31,9 +31,9 @@ function clear(phone) {
     delete carts[phone]
 }
 
-// states: registering_name | registering_address | browsing | confirming_items | confirming_time | done
+// Generic session state store — domain packs define their own state machines
 function init(phone) {
-    set(phone, { state: "browsing", items: [], user: null })
+    set(phone, { state: "active", data: {}, user: null })
 }
 
 module.exports = { get, set, update, clear, init }

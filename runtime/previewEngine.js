@@ -40,14 +40,17 @@ function isAutoMode() { return _autoModeEnabled }
 function rid() { return `prev-${crypto.randomBytes(8).toString("hex")}` }
 function elapsed(start) { return `${Date.now() - start}ms` }
 
-const RISK_MAP = {
-    order_create: "high", order_lookup: "medium", sqlite: "medium",
-    sqlite_query: "medium", menu_rag: "low", rag: "low", rag_generic: "low",
-    support: "low", support_generic: "low", restaurant_support: "low",
+// Core risk map — generic tool types only. Domain packs extend via riskMap export.
+const CORE_RISK_MAP = {
+    sqlite: "medium", sqlite_query: "medium",
+    rag: "low", rag_generic: "low",
+    support: "low", support_generic: "low",
     business_chat: "low",
 }
+const _dynamicRiskMap = new Map()
+function registerRiskMap(map) { for (const [k, v] of Object.entries(map)) _dynamicRiskMap.set(k, v) }
 const RISK_ORDER = ["low", "medium", "high", "critical"]
-function riskOf(type) { return RISK_MAP[type] || "medium" }
+function riskOf(type) { return _dynamicRiskMap.get(type) || CORE_RISK_MAP[type] || "medium" }
 
 function aggregateRisk(plan) {
     if (!plan || !plan.length) return "low"
@@ -140,15 +143,15 @@ async function buildPreview(message, phone, workspaceId) {
 
     // ── Gate 2: Session State ────────────────────────────────────────────────
     t0 = Date.now()
-    const activeCart = cartStore.get(phone)
+    const activeSession = cartStore.get(phone)
     const activeSupport = cartStore.get(`support:${phone}`)
     let sessionOverride = null
 
-    if (activeCart && activeCart.state === "support_handoff") {
-        sessionOverride = { intent: "support", reason: "Cart support_handoff" }
-    } else if (activeCart) {
-        const cartIntent = agentChain._sessionRouting?.activeCartIntent || "place_order"
-        sessionOverride = { intent: cartIntent, reason: `Active cart (${activeCart.state})` }
+    if (activeSession && activeSession.state === "support_handoff") {
+        sessionOverride = { intent: "support", reason: "Session support_handoff" }
+    } else if (activeSession) {
+        const cartIntent = agentChain._sessionRouting?.activeCartIntent || Object.keys(agentChain._manifest?.intents || {})[0] || "general_chat"
+        sessionOverride = { intent: cartIntent, reason: `Active session (${activeCart.state})` }
     } else if (activeSupport) {
         sessionOverride = { intent: "support", reason: `Active support (${activeSupport.state})` }
     }
@@ -156,7 +159,7 @@ async function buildPreview(message, phone, workspaceId) {
     gates.push({
         id: "session", name: "Session State", order: 2,
         status: sessionOverride ? "override" : "pass", duration: elapsed(t0),
-        input: { phone, hasCart: !!activeCart, hasSupport: !!activeSupport },
+        input: { phone, hasSession: !!activeSession, hasSupport: !!activeSupport },
         output: sessionOverride
             ? { override: true, forcedIntent: sessionOverride.intent, reason: sessionOverride.reason }
             : { override: false, reason: "No active session" },
@@ -514,9 +517,7 @@ function _buildIntentPrompt(message, manifest) {
     const defaultIntent = configuredIntents.includes("general_chat") ? "general_chat" : configuredIntents[0] || "general_chat"
 
     const filterSchema = manifest._domainPackFilterSchema || {
-        section: { type: "string", description: "catalog section or category" },
-        query: { type: "string", description: "searchable item/category terms" },
-        max_price: { type: "number", description: "maximum price" },
+        query: { type: "string", description: "search terms" },
     }
 
     const filterTemplate = JSON.stringify(
@@ -526,8 +527,8 @@ function _buildIntentPrompt(message, manifest) {
     const intentGuide = configuredIntents.map(i => `- "${i}": ${intentHints[i] || "No hint."}`).join("\n")
 
     const defaultExamples = [
-        { input: `"items under 200"`, output: `{"intent":"show_menu","filter":{"section":null,"query":"items","max_price":200}}` },
-        { input: `"what services do you offer"`, output: `{"intent":"show_menu","filter":{"section":null,"query":"services","max_price":null}}` },
+        { input: `"what can you help with"`, output: `{"intent":"general_chat","filter":{"query":null}}` },
+        { input: `"I need support"`, output: `{"intent":"support","filter":{"query":null}}` },
     ]
     const examples = manifest._domainPackFilterExamples || defaultExamples
     const examplesStr = examples.map(ex => `- ${ex.input} -> ${typeof ex.output === "string" ? ex.output : JSON.stringify(ex.output)}`).join("\n")
@@ -635,5 +636,5 @@ async function buildWorkflowPreview(workflowId, phone, workspaceId, params) {
 
 module.exports = {
     buildPreview, buildWorkflowPreview, approveAndExecute, reject, getPending, listPending, getEntry,
-    setExecutionPolicy, getExecutionPolicy, setAutoMode, isAutoMode,
+    setExecutionPolicy, getExecutionPolicy, setAutoMode, isAutoMode, registerRiskMap,
 }

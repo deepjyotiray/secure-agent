@@ -43,17 +43,17 @@ class AgentChain {
         }
 
         // 2. Active session check — skip LLM entirely
-        const activeCart    = cartStore.get(phone)
+        const activeSession = cartStore.get(phone)
         const activeSupport = cartStore.get(`support:${phone}`)
 
-        if (activeCart && activeCart.state === "support_handoff") {
-            // user picked support from order menu — clear order cart, route to support
+        if (activeSession && activeSession.state === "support_handoff") {
+            // active session handed off to support — clear session, route to support
             cartStore.clear(phone)
             return await executor.execute(this._manifest, { intent: "support", filter: {} }, { phone, rawMessage: message })
         }
 
-        if (activeCart) {
-            const cartIntent = this._sessionRouting.activeCartIntent || "place_order"
+        if (activeSession) {
+            const cartIntent = this._sessionRouting.activeCartIntent || Object.keys(this._manifest.intents)[0] || "general_chat"
             return await executor.execute(this._manifest, { intent: cartIntent, filter: {} }, { phone, rawMessage: message })
         }
 
@@ -89,7 +89,7 @@ class AgentChain {
 
         // 4. Guard — fallback to public concierge if route is unknown
         if (!this._manifest.intents[intent]) {
-            intent = this._manifest.intents.general_chat ? "general_chat" : "place_order"
+            intent = this._manifest.intents.general_chat ? "general_chat" : Object.keys(this._manifest.intents)[0]
         }
 
         // 5. Execute
@@ -172,8 +172,20 @@ class AgentChain {
             executor.registerToolType(name, handler)
         }
 
+        // register domain pack risk map with preview engine
+        if (pack.riskMap) {
+            try {
+                const { registerRiskMap } = require("./previewEngine")
+                registerRiskMap(pack.riskMap)
+            } catch {}
+        }
+
         // attach domain pack config to manifest for customerRouter/intentParser
-        if (pack.heuristics)      this._manifest._domainPackHeuristics     = pack.heuristics
+        if (pack.heuristics) {
+            const merged = { ...pack.heuristics }
+            if (pack.heuristicIntentMap) merged._intentMap = pack.heuristicIntentMap
+            this._manifest._domainPackHeuristics = merged
+        }
         if (pack.filterSchema)    this._manifest._domainPackFilterSchema   = pack.filterSchema
         if (pack.filterExamples)  this._manifest._domainPackFilterExamples = pack.filterExamples
 
@@ -204,14 +216,22 @@ class AgentChain {
 
     getTools() {
         if (!this._ready) throw new Error("No agent loaded")
-        return Object.entries(this._manifest.tools).map(([name, cfg]) => ({ name, ...cfg }))
+        return Object.entries(this._manifest.tools).map(([name, cfg]) => this._resolveToolPaths({ name, ...cfg }))
     }
 
     getTool(name) {
         if (!this._ready) throw new Error("No agent loaded")
         const cfg = this._manifest.tools[name]
         if (!cfg) throw new Error(`Tool '${name}' not found`)
-        return { name, ...cfg }
+        return this._resolveToolPaths({ name, ...cfg })
+    }
+
+    _resolveToolPaths(tool) {
+        const pathKeys = ["db_path", "vectordb_path", "faq_path"]
+        for (const k of pathKeys) {
+            if (tool[k]) try { tool[k] = fs.realpathSync(path.resolve(tool[k])) } catch {}
+        }
+        return tool
     }
 
     addIntent(name, config) {
@@ -249,6 +269,14 @@ class AgentChain {
         delete this._manifest.tools[name]
         this._saveManifest()
         return Object.keys(this._manifest.tools)
+    }
+
+    reloadAgent() {
+        if (!this._manifestPath) throw new Error("No agent loaded yet")
+        // clear cached settings so require() re-reads from disk
+        delete require.cache[require.resolve("../config/settings.json")]
+        this.loadAgent(this._manifestPath)
+        logger.info("chain: hot-reloaded manifest + settings")
     }
 
     _saveManifest() {

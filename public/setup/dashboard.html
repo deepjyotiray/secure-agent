@@ -1,0 +1,71 @@
+<!doctype html><html lang="en"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SecureAI — Dashboard</title>
+  <link rel="stylesheet" href="/setup/assets/shared.css">
+</head><body>
+  <main class="page" id="page">
+    <div class="page-header"><h2>Dashboard</h2><p>System overview and quick actions.</p></div>
+    <div class="stat-row" id="stats"></div>
+    <div class="card" id="ws-card">
+      <div class="card-head"><h3 id="ws-title">Workspace</h3></div>
+      <div class="kv-grid" id="ws-info"></div>
+    </div>
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-head"><h3>Agent Process</h3><button class="btn btn-ghost btn-sm" id="refresh-btn">Refresh</button></div>
+        <pre class="code-block" id="health-out" style="min-height:80px">Loading…</pre>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Quick Actions</h3></div>
+        <div class="btn-group" style="flex-direction:column;gap:10px">
+          <button class="btn btn-primary" id="reload-btn">↻ Hot-Reload Agent</button>
+          <a class="btn btn-ghost" href="/profile">Edit Business Profile →</a>
+          <a class="btn btn-ghost" href="/chat">Open Chat Sandbox →</a>
+          <a class="btn btn-ghost" href="/admin">Run Admin Task →</a>
+          <a class="btn btn-ghost" href="/tools">Manage Agent Tools →</a>
+        </div>
+        <div class="status-box" id="action-status" style="margin-top:12px"></div>
+      </div>
+    </div>
+  </main>
+  <script src="/setup/assets/shared.js"></script>
+  <script>
+    buildShell("dashboard")
+    async function load() {
+      try {
+        const [h, profile, gov] = await Promise.all([
+          api("/health"),
+          api(ws("/setup/profile")),
+          api(ws("/setup/governance")),
+        ])
+        $("health-out").textContent = JSON.stringify(h, null, 2)
+        const p = profile.profile || {}
+        const toolCount = Object.keys(gov.tools || {}).length
+        const workerCount = Object.keys(gov.workers || {}).length
+        $("ws-title").textContent = p.businessName || activeWorkspace
+        $("ws-info").innerHTML = `
+          <dt>Type</dt><dd>${esc(p.businessType || "—")}</dd>
+          <dt>Currency</dt><dd>${esc(p.currency || "—")}</dd>
+          <dt>Timezone</dt><dd>${esc(p.timezone || "—")}</dd>
+          <dt>DB</dt><dd><code>${esc(p.dbPath || "none")}</code></dd>
+          <dt>Governance Role</dt><dd>${esc(gov.role || "—")}</dd>`
+        $("stats").innerHTML = `
+          <div class="stat-card"><div class="stat-label">Agent</div><div class="stat-value">${h.status === "ok" ? "✓ Online" : "⚠ " + h.status}</div></div>
+          <div class="stat-card"><div class="stat-label">Workspace</div><div class="stat-value">${esc(activeWorkspace)}</div></div>
+          <div class="stat-card"><div class="stat-label">Governed Tools</div><div class="stat-value">${toolCount}</div></div>
+          <div class="stat-card"><div class="stat-label">Workers</div><div class="stat-value">${workerCount}</div></div>`
+      } catch (e) { $("health-out").textContent = "Error: " + e.message }
+    }
+    window.onWorkspaceChange = load
+    $("refresh-btn").addEventListener("click", load)
+    $("reload-btn").addEventListener("click", async () => {
+      setText("action-status", "Reloading…")
+      try {
+        const d = await api("/setup/reload", "POST", {})
+        setText("action-status", "✓ Agent reloaded. " + JSON.stringify(d.agent || {}))
+        load()
+      } catch (e) { setText("action-status", "✗ " + e.message) }
+    })
+    initWorkspace().then(load)
+  </script>
+</body></html>

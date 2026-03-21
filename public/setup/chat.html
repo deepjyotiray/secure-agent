@@ -1,0 +1,102 @@
+<!doctype html><html lang="en"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SecureAI — Chat Sandbox</title>
+  <link rel="stylesheet" href="/setup/assets/shared.css">
+  <style>
+    .chat-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+    .pi-stage { margin-bottom: 10px; padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); }
+    .pi-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .pi-detail { font-size: 0.82rem; color: var(--muted); line-height: 1.5; word-break: break-word; }
+    .pi-detail code { padding: 1px 5px; border-radius: 4px; background: rgba(255,255,255,0.06); font-size: 0.8rem; }
+    .pi-kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin-top: 4px; }
+    .pi-kv dt { font-weight: 600; color: var(--text-2); white-space: nowrap; }
+    .pi-kv dd { margin: 0; }
+    .pi-actions { display: flex; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+    @media (max-width: 1000px) { .chat-layout { grid-template-columns: 1fr; } }
+  </style>
+</head><body>
+  <main class="page">
+    <div class="page-header"><h2>Chat Sandbox</h2><p>Test the live agent as a customer. Toggle Pipeline Inspector to see the full trace.</p></div>
+    <div class="chat-layout">
+      <div>
+        <div class="card">
+          <div style="display:flex;gap:10px;align-items:end;margin-bottom:10px;flex-wrap:wrap">
+            <label class="field" style="flex:1;min-width:160px"><span>Test phone</span><input id="phone" value="+919999999999"></label>
+            <label class="field" style="flex:0 0 auto;min-width:100px"><span>Mode</span>
+              <select id="chat-mode"><option value="live">Live Agent</option><option value="draft">Draft</option><option value="auto">Auto</option></select>
+            </label>
+            <div class="toggle-row" style="flex:0 0 auto;gap:10px"><span style="font-size:0.82rem">Pipeline Inspector</span><input id="pi-toggle" type="checkbox"></div>
+          </div>
+          <div class="chat-log" id="log"></div>
+          <form class="chat-compose" id="chat-form">
+            <input id="msg" placeholder="Ask like a customer…" autofocus>
+            <button class="btn btn-primary" type="submit">Send</button>
+          </form>
+        </div>
+      </div>
+      <div>
+        <div class="card hidden" id="pi-panel">
+          <div class="card-head"><h3>Pipeline Inspector</h3><button class="btn btn-ghost btn-sm" id="pi-close">✕</button></div>
+          <div id="pi-body"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="/setup/assets/shared.js"></script>
+  <script>
+    buildShell("chat")
+    function appendMsg(role, text) {
+      const d = document.createElement("div"); d.className = "chat-msg " + role; d.textContent = text
+      $("log").appendChild(d); $("log").scrollTop = $("log").scrollHeight
+    }
+
+    function renderPipeline(p) {
+      show("pi-panel")
+      let h = ""
+      // Input
+      h += `<div class="pi-stage"><div class="pi-head"><span class="badge badge-muted">1</span><strong style="font-size:0.84rem">Input</strong></div><div class="pi-detail"><dl class="pi-kv"><dt>Raw</dt><dd><code>${esc(p.input?.raw||"")}</code></dd><dt>Sanitized</dt><dd><code>${esc(p.input?.sanitized||"—")}</code></dd></dl></div></div>`
+      // Sanitizer
+      const safe = p.sanitizer?.safe
+      h += `<div class="pi-stage"><div class="pi-head"><span class="badge ${safe?"badge-green":"badge-red"}">${safe?"SAFE":"BLOCKED"}</span><strong style="font-size:0.84rem">Sanitizer</strong></div><div class="pi-detail">${safe?"Passed all checks.":"Blocked: "+esc(p.sanitizer?.reason||"")}</div></div>`
+      if (p.status === "blocked" && !p.routing) { $("pi-body").innerHTML = h; return }
+      // Session
+      if (p.session) { h += `<div class="pi-stage"><div class="pi-head"><span class="badge ${p.session.active?"badge-yellow":"badge-muted"}">${p.session.active?"ACTIVE":"NONE"}</span><strong style="font-size:0.84rem">Session</strong></div><div class="pi-detail">${p.session.active?esc(p.session.override||"Active session"):"No active session."}</div></div>` }
+      // Routing
+      if (p.routing) { h += `<div class="pi-stage"><div class="pi-head"><span class="badge badge-accent">4</span><strong style="font-size:0.84rem">Intent</strong></div><div class="pi-detail"><dl class="pi-kv"><dt>Intent</dt><dd><code>${esc(p.routing.intent)}</code></dd><dt>Confidence</dt><dd>${(p.routing.confidence*100).toFixed(0)}%</dd><dt>Heuristic</dt><dd><code>${p.routing.heuristicMatch||"—"}</code></dd><dt>Filter</dt><dd><code>${esc(JSON.stringify(p.routing.filter||{}))}</code></dd></dl></div></div>` }
+      // Policy
+      if (p.policy) { h += `<div class="pi-stage"><div class="pi-head"><span class="badge ${p.policy.allowed?"badge-green":"badge-red"}">${p.policy.allowed?"ALLOWED":"DENIED"}</span><strong style="font-size:0.84rem">Policy</strong></div><div class="pi-detail"><ul style="list-style:none;padding:0">${(p.policy.checks||[]).map(c=>`<li>${c.result?"✅":"❌"} <code>${esc(c.rule)}</code> ${c.detail?("— "+esc(c.detail)):""}</li>`).join("")}</ul></div></div>` }
+      // Plan
+      if (p.plan?.length) { h += `<div class="pi-stage"><div class="pi-head"><span class="badge badge-blue">6</span><strong style="font-size:0.84rem">Plan</strong></div><div class="pi-detail">${p.plan.map(s=>`<div style="margin-top:6px"><dl class="pi-kv"><dt>Step ${s.step}</dt><dd><code>${esc(s.tool)}</code> (${esc(s.type)})</dd><dt>Risk</dt><dd><span class="badge ${s.risk==="low"?"badge-green":s.risk==="medium"?"badge-yellow":"badge-red"}">${(s.risk||"").toUpperCase()}</span></dd></dl></div>`).join("")}</div></div>` }
+      // Actions
+      if (p.status === "awaiting_approval") {
+        h += `<div class="pi-actions"><button class="btn btn-green btn-sm" id="pi-approve">✓ Approve</button><button class="btn btn-red btn-sm" id="pi-reject">✗ Reject</button></div>`
+      }
+      $("pi-body").innerHTML = h
+      $("pi-approve")?.addEventListener("click", async () => {
+        try { const d = await api("/setup/preview/approve","POST",{requestId:p.requestId}); appendMsg("agent", d.response||"Executed."); $("pi-body").innerHTML += '<div class="badge badge-green" style="margin-top:8px">EXECUTED</div>' } catch(e) { appendMsg("agent","Error: "+e.message) }
+      })
+      $("pi-reject")?.addEventListener("click", async () => {
+        try { await api("/setup/preview/reject","POST",{requestId:p.requestId}); appendMsg("agent","[Rejected]") } catch(e) {}
+      })
+    }
+
+    $("chat-form").addEventListener("submit", async e => {
+      e.preventDefault()
+      const phone = $("phone").value.trim(), msg = $("msg").value.trim()
+      if (!phone || !msg) return
+      appendMsg("user", msg); $("msg").value = ""
+      const preview = $("pi-toggle").checked
+      try {
+        if (preview) {
+          const d = await api("/setup/preview","POST",{phone,message:msg,workspaceId:activeWorkspace})
+          renderPipeline(d.preview)
+        } else {
+          const d = await api("/setup/chat","POST",{phone,message:msg,workspaceId:activeWorkspace,mode:$("chat-mode").value})
+          appendMsg("agent", (d.response || "No response") + "  [" + (d.source||"?") + "]")
+        }
+      } catch(e) { appendMsg("agent", "Error: " + e.message) }
+    })
+    $("pi-close").addEventListener("click", () => hide("pi-panel"))
+    initWorkspace().then(() => { appendMsg("agent", "Chat sandbox ready. Try a customer question.") })
+  </script>
+</body></html>

@@ -1,0 +1,49 @@
+<!doctype html><html lang="en"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SecureAI — Interceptor</title>
+  <link rel="stylesheet" href="/setup/assets/shared.css">
+  <link rel="stylesheet" href="/setup/assets/intercept.css">
+  <style>
+    body { background: var(--bg, #0a0a0f); }
+    .topbar { display: none !important; }
+    .layout { height: calc(100vh - var(--topbar-h) - 24px); }
+  </style>
+</head><body>
+  <main class="page" style="padding:12px 16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <h2 style="font-size:1.1rem;font-weight:700">WhatsApp Interceptor</h2>
+      <label class="toggle-pill" id="master-toggle-label">
+        <input id="master-toggle" type="checkbox">
+        <span class="pill-track"><span class="pill-thumb"></span></span>
+        <span class="pill-text">Intercept OFF</span>
+      </label>
+    </div>
+    <main class="layout" style="min-height:auto;height:calc(100vh - 120px)">
+      <section class="queue-panel">
+        <div class="queue-head"><h2>Held Messages</h2><span id="queue-count" class="badge">0</span></div>
+        <div id="queue-list" class="queue-list">
+          <div class="queue-empty" id="queue-empty"><p>No messages held.</p><p class="muted">Turn on the interceptor and send a WhatsApp message.</p></div>
+        </div>
+      </section>
+      <section class="inspector-panel" id="inspector-panel">
+        <div class="inspector-empty" id="inspector-empty"><p>Select a held message to inspect its pipeline.</p></div>
+        <div class="inspector-content hidden" id="inspector-content">
+          <div class="inspector-head"><div><strong id="ins-phone"></strong><span class="muted" id="ins-age"></span></div><div class="inspector-actions" id="ins-actions"></div></div>
+          <div class="ins-message" id="ins-message"></div>
+          <div class="gates" id="gates-container">
+            <div class="gate" id="gate-sanitizer" data-gate="sanitizer"><div class="gate-head"><span class="gate-num">1</span><span class="gate-name">Input Sanitizer</span><span class="gate-badge" id="badge-sanitizer">—</span></div><div class="gate-body" id="body-sanitizer"></div></div>
+            <div class="gate" id="gate-session" data-gate="session"><div class="gate-head"><span class="gate-num">2</span><span class="gate-name">Session State</span><span class="gate-badge" id="badge-session">—</span></div><div class="gate-body" id="body-session"></div></div>
+            <div class="gate" id="gate-heuristic" data-gate="heuristic"><div class="gate-head"><span class="gate-num">3</span><span class="gate-name">Heuristic Classifier</span><span class="gate-badge" id="badge-heuristic">—</span></div><div class="gate-body" id="body-heuristic"></div></div>
+            <div class="gate" id="gate-llm_intent" data-gate="llm_intent"><div class="gate-head"><span class="gate-num">4</span><span class="gate-name">LLM Intent Classifier</span><span class="gate-badge" id="badge-llm_intent">—</span></div><div class="gate-body" id="body-llm_intent"></div></div>
+            <div class="gate" id="gate-policy" data-gate="policy"><div class="gate-head"><span class="gate-num">5</span><span class="gate-name">Policy Engine</span><span class="gate-badge" id="badge-policy">—</span></div><div class="gate-body" id="body-policy"></div></div>
+            <div class="gate" id="gate-manifest_guard" data-gate="manifest_guard"><div class="gate-head"><span class="gate-num">6</span><span class="gate-name">Manifest Guard</span><span class="gate-badge" id="badge-manifest_guard">—</span></div><div class="gate-body" id="body-manifest_guard"></div></div>
+            <div class="gate" id="gate-tool_resolution" data-gate="tool_resolution"><div class="gate-head"><span class="gate-num">7</span><span class="gate-name">Tool Resolution</span><span class="gate-badge" id="badge-tool_resolution">—</span></div><div class="gate-body" id="body-tool_resolution"></div></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </main>
+  <script src="/setup/assets/shared.js"></script>
+  <script src="/setup/assets/intercept.js"></script>
+  <script>buildShell("intercept"); initWorkspace()</script>
+</body></html>

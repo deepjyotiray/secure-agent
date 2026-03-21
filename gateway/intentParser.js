@@ -5,20 +5,15 @@ const { registerGuide } = require("../core/promptGuides")
 
 // ── Default filter schema (generic — domain packs can override) ──────────────
 const DEFAULT_FILTER_SCHEMA = {
-    section:   { type: "string",  description: "catalog section or category" },
-    query:     { type: "string",  description: "searchable item/category terms" },
-    max_price: { type: "number",  description: "maximum price" },
+    query: { type: "string", description: "search terms" },
 }
 
-const DEFAULT_EXTRACTION_RULES = `- For "under 200", "below 200", "less than 200", set "max_price": 200.
-- Put the searchable item/category terms in "query" without price words if possible.
-- If the message is not a catalog query, keep filter values null unless a field is clearly useful.
-- Never drop a clear numerical constraint from the user's message.`
+const DEFAULT_EXTRACTION_RULES = `- Extract relevant search terms into "query" if present.
+- Keep filter values null unless a field is clearly useful.`
 
 const DEFAULT_FILTER_EXAMPLES = [
-    { input: `"items under 200"`, output: `{"intent":"show_menu","filter":{"section":null,"query":"items","max_price":200}}` },
-    { input: `"what services do you offer"`, output: `{"intent":"show_menu","filter":{"section":null,"query":"services","max_price":null}}` },
-    { input: `"what is your support email"`, output: `{"intent":"general_chat","filter":{"section":null,"query":null,"max_price":null}}` },
+    { input: `"what can you help with"`, output: `{"intent":"general_chat","filter":{"query":null}}` },
+    { input: `"I need support"`, output: `{"intent":"support","filter":{"query":null}}` },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -66,7 +61,7 @@ function extractJson(text) {
 async function parseIntent(message, options = {}) {
     const allowedIntents = Array.isArray(options.allowedIntents) && options.allowedIntents.length
         ? options.allowedIntents
-        : ["greet", "show_menu", "order_status", "place_order", "support", "general_chat", "unknown"]
+        : ["greet", "support", "general_chat", "unknown"]
     const defaultIntent = options.defaultIntent || (allowedIntents.includes("general_chat") ? "general_chat" : allowedIntents[0])
 
     // resolve filter config — use domain pack schema if provided, else defaults

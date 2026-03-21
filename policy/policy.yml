@@ -1,39 +1,116 @@
-# Global default policy — generic, domain-agnostic.
-# Workspace-specific policies override this (data/workspaces/<id>/policy.yml).
-
 allowed_intents:
   - greet
   - help
-  - show_menu
-  - order_status
-  - place_order
-  - general_chat
-  - support
+  - browse_menu
+  - add_to_cart
+  - confirm_order
+  - check_order_status
+  - inquire_delivery_time
+  - inquire_delivery_areas
+  - inquire_veg_options
+  - inquire_high_protein_meals
+  - inquire_payment_methods
+  - inquire_refund_policy
+  - inquire_subscription_plans
+  - inquire_corporate_orders
+  - inquire_menu_of_the_day
+  - escalate_issue
 
 restricted_intents:
-  - login
   - create_order
+  - delete_item
+  - admin_actions
+  - modify_order
+  - access_personal_data
+  - change_payment_method
+  - update_account_details
 
 domain_keywords:
-  - order
-  - buy
-  - cart
-  - checkout
-  - price
+  - ray's
+  - home
+  - kitchen
+  - healthy
+  - meals
   - delivery
-  - status
-  - payment
+  - fresh
+  - salad
+  - thali
+  - biryani
+  - starter
+  - dessert
+  - subscription
+  - plan
+  - calorie
+  - protein
+  - carb
+  - fat
+  - nutrition
+  - mumbai
+  - bandra
+  - khar
+  - santacruz
+  - andheri
+  - juhu
+  - veg
+  - non-veg
+  - chicken
+  - paneer
+  - prawns
+  - raita
+  - poha
+  - sprouts
+  - corporate
   - invoice
   - receipt
-  - track
-  - item
-  - product
-  - service
-  - catalog
   - menu
-  - help
+  - discount
+  - coupon
+  - order
+  - track
   - support
-  - hi
-  - hello
-  - hey
-  - thanks
+  - refund
+  - policy
+  - complaint
+  - admin
+  - escalate
+  - lunch
+  - dinner
+  - delivery
+  - charge
+  - payment
+  - upi
+  - bank
+  - transfer
+  - website
+  - contact
+  - email
+  - phone
+  - address
+  - india
+  - service
+  - area
+  - business
+  - hours
+  - offer
+  - catalog
+  - rice
+  - bowl
+  - rajma
+  - dal
+  - pulao
+  - egg
+  - curry
+  - gulab
+  - jamun
+  - motd
+  - healthySubs
+  - bmi
+  - calculator
+  - blog
+  - article
+  - invoice
+  - receipt
+  - corporate
+  - menu
+  - invoice
+  - receipt

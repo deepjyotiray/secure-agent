@@ -7,6 +7,10 @@ let _enabled = false
 const _held = new Map()  // requestId → { preview, phone, rawJid, text, sock, createdAt }
 const HELD_TTL = 10 * 60 * 1000
 
+// ── Message Log (always-on ring buffer) ──────────────────────────────────────
+const MAX_LOG = 200
+const _log = []
+
 setInterval(() => {
     const now = Date.now()
     for (const [id, entry] of _held) {
@@ -85,4 +89,14 @@ function listHeld() {
     }))
 }
 
-module.exports = { isEnabled, setEnabled, intercept, approve, reject, listHeld }
+function logMessage(phone, text, response, intent, source) {
+    _log.push({ phone, text, response, intent, source: source || "whatsapp", ts: Date.now() })
+    if (_log.length > MAX_LOG) _log.shift()
+}
+
+function getLog(limit) {
+    const n = Math.min(limit || 50, _log.length)
+    return _log.slice(-n).reverse()
+}
+
+module.exports = { isEnabled, setEnabled, intercept, approve, reject, listHeld, logMessage, getLog }

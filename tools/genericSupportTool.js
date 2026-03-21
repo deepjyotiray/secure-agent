@@ -54,7 +54,8 @@ async function escalate(phone, issueText, adminPhone) {
 async function execute(_params, context, toolConfig) {
     const { phone, rawMessage: msg } = context
     const { faq_path, escalation_phone, business_name } = toolConfig
-    const adminPhone = escalation_phone || settings.admin?.number || ""
+    const wp = context.profile || {}
+    const adminPhone = escalation_phone || wp.contactPhone || settings.admin?.number || ""
     const text = (msg || "").trim()
     const key = `support:${phone}`
 
@@ -78,10 +79,14 @@ async function execute(_params, context, toolConfig) {
         `Topic: ${f.topic}\nKeywords: ${(f.keywords || []).join(", ")}\nAnswer: ${f.answer}`
     ).join("\n\n")
 
-    const biz = business_name || "the business"
+    const biz = business_name || wp.businessName || "the business"
+    const profileFacts = context.profileFacts || ""
     const prompt = `You are a helpful support assistant for ${biz}.
 Answer the customer's question using the FAQ knowledge below. Be concise and formatted for WhatsApp.
 If you cannot answer from the FAQ, say: "I'm not sure about that. Would you like to talk to a human? Just say 'talk to human'."
+
+Business profile:
+${profileFacts}
 
 FAQ Knowledge:
 ${faqContext || "No FAQ loaded."}

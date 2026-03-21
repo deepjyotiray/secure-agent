@@ -22,9 +22,18 @@ module.exports = {
 
     // heuristic keywords for customerRouter
     heuristics: {
-        menu:    ["menu", "dish", "dishes", "food", "eat", "hungry", "price", "veg", "nonveg", "non-veg", "thali", "biryani", "combo", "calorie", "calories", "protein", "fat", "carb", "carbs", "nutrition", "healthy", "low cal", "high protein", "keto", "diet"],
-        order:   ["order", "buy", "cart", "checkout", "place order", "add"],
-        support: ["help", "support", "complaint", "refund", "wrong", "missing", "late", "cancel"],
+        menu:    ["menu", "dish", "dishes", "food", "eat", "hungry", "price", "veg", "nonveg", "non-veg", "thali", "biryani", "combo", "calorie", "calories", "protein", "fat", "carb", "carbs", "nutrition", "healthy", "low cal", "high protein", "keto", "diet", "catalog", "catalogue", "item", "items", "product", "products", "service", "services", "cost", "list", "browse", "show", "available", "option", "options"],
+        order:   ["order", "delivery", "delivered", "status", "track", "eta", "invoice", "receipt", "bill", "payment", "paid", "unpaid", "resend", "refund", "late"],
+        buy:     ["place order", "want to order", "i want", "buy", "checkout", "cart", "add", "confirm order", "purchase"],
+        support: ["help", "support", "complaint", "refund", "wrong", "missing", "cancel"],
+    },
+
+    // intent mapping for heuristic categories
+    heuristicIntentMap: {
+        menu:    "show_menu",
+        order:   "order_status",
+        buy:     "place_order",
+        support: "support",
     },
 
     // filter schema for intentParser
@@ -53,6 +62,14 @@ module.exports = {
     // vision prompt and handler for admin image processing
     visionPrompt: adminTools.visionPrompt,
     insertVisionEntries: adminTools.insertVisionEntries,
+
+    // risk classification for preview engine
+    riskMap: {
+        menu_rag: "low",
+        order_lookup: "medium",
+        order_create: "high",
+        restaurant_support: "low",
+    },
 
     // session routing config
     sessionRouting: {

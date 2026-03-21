@@ -523,28 +523,16 @@ function queryDb(sql, workspaceId) {
     }
 }
 
-function addExpense(args, workspaceId) {
+function dispatchDomainTool(name, args, workspaceId) {
     try {
         const profile = loadProfile(workspaceId)
         const pack = getPackForWorkspace(profile)
         if (pack?.dispatchAdminTool) {
-            const result = pack.dispatchAdminTool("add_expense", args, resolveWorkspaceDbPath(workspaceId))
+            const result = pack.dispatchAdminTool(name, args, resolveWorkspaceDbPath(workspaceId))
             if (result !== null) return result
         }
     } catch {}
-    return "❌ add_expense not available for this workspace."
-}
-
-function updateOrder(orderId, deliveryStatus, paymentStatus, workspaceId) {
-    try {
-        const profile = loadProfile(workspaceId)
-        const pack = getPackForWorkspace(profile)
-        if (pack?.dispatchAdminTool) {
-            const result = pack.dispatchAdminTool("update_order", { order_id: orderId, delivery_status: deliveryStatus, payment_status: paymentStatus }, resolveWorkspaceDbPath(workspaceId))
-            if (result !== null) return result
-        }
-    } catch {}
-    return "❌ update_order not available for this workspace."
+    return null
 }
 
 async function sendWhatsapp(phone, message) {
@@ -718,11 +706,18 @@ function runNode(filePath) {
     })
 }
 
-function listTools() {
+function listTools(workspaceId) {
     const toolsDir = path.resolve(__dirname, "../tools")
     let scripts = ""
     try { scripts = fs.readdirSync(toolsDir).filter(f => f.endsWith(".js")).join(", ") } catch {}
-    return `Tool scripts: ${scripts}\nAdmin agent tools: run_shell, query_db, add_expense, update_order, send_whatsapp, http_request, load_test, recon, server_health, open_browser, open_in_chrome, navigate, screenshot, click, type_text, press_key, read_page, scrape_page, scroll, wait_for_element, get_current_url, close_browser, write_file, read_file, npm_install, run_node, list_tools, list_governance`
+    const coreNames = CORE_TOOL_DEFINITIONS.map(t => t.function.name).join(", ")
+    let domainNames = ""
+    try {
+        const profile = loadProfile(workspaceId)
+        const pack = getPackForWorkspace(profile)
+        if (pack?.adminToolDefinitions?.length) domainNames = pack.adminToolDefinitions.map(t => t.function.name).join(", ")
+    } catch {}
+    return `Tool scripts: ${scripts}\nCore admin tools: ${coreNames}${domainNames ? `\nDomain tools: ${domainNames}` : ""}`
 }
 
 function listGovernance(role, workspaceId) {
@@ -854,8 +849,6 @@ async function dispatchTool(name, args, governanceContext = {}) {
         case "open_in_chrome":  return await runMacAutomation(`tell application "Google Chrome" to open location "${args.url}"`, "applescript")
         case "chrome_js":       return await runMacAutomation(`tell application "Google Chrome" to execute front window's active tab javascript "${(args.js||args.code||"").replace(/"/g,"'")}"`, "applescript")
         case "query_db":      return queryDb(args.sql, governanceContext.workspaceId)
-        case "add_expense":   return addExpense(args, governanceContext.workspaceId)
-        case "update_order":  return updateOrder(args.order_id, args.delivery_status, args.payment_status, governanceContext.workspaceId)
         case "send_whatsapp": return await sendWhatsapp(args.phone, args.message)
         case "http_request":  return await httpRequest(args.url, args.method, args.body)
         case "load_test":     return await loadTest(args.url, args.requests, args.concurrency)
@@ -865,11 +858,15 @@ async function dispatchTool(name, args, governanceContext = {}) {
         case "read_file":     return readFile(args.path)
         case "npm_install":   return await npmInstall(args.packages)
         case "run_node":      return await runNode(args.path)
-        case "list_tools":    return listTools()
+        case "list_tools":    return listTools(governanceContext.workspaceId)
         case "list_governance": return listGovernance(governanceContext.role, governanceContext.workspaceId)
         case "youtube_play":   return await youtubePlay(args.url)
         case "run_skill":     return await runSkill(args.skill, args.task)
-        default:              return `❌ Unknown tool: ${name}`
+        default: {
+            const domainResult = dispatchDomainTool(name, args, governanceContext.workspaceId)
+            if (domainResult !== null) return domainResult
+            return `❌ Unknown tool: ${name}`
+        }
     }
 }
 
@@ -978,7 +975,7 @@ BROWSER AUTOMATION RULES — ALWAYS FOLLOW:
    Step 6: close_browser
    Step 7: youtube_play → url: "<URL from step 5 or click result>"
    DONE. youtube_play opens Chrome and starts playback automatically. Never use mac_automation for YouTube.
-AVAILABLE TOOLS: run_shell, mac_automation, query_db, add_expense, update_order, send_whatsapp, http_request, load_test, recon, server_health, open_browser, open_in_chrome, chrome_js, navigate, screenshot, click, type_text, press_key, read_page, scrape_page, scroll, wait_for_element, get_current_url, close_browser, get_dom, type_by_index, click_by_index, write_file, read_file, npm_install, run_node, list_tools, list_governance, run_skill
+AVAILABLE TOOLS: ${CORE_TOOL_DEFINITIONS.map(t => t.function.name).join(", ")}${(() => { try { const p = loadProfile(workspaceId); const pk = getPackForWorkspace(p); return pk?.adminToolDefinitions?.length ? ", " + pk.adminToolDefinitions.map(t => t.function.name).join(", ") : "" } catch { return "" } })()}
 
 ${(() => { const notes = loadNotes(workspaceId); return notes ? "DATA MODEL NOTES (auto-generated for this workspace):\n" + notes : "" })()}`
         },

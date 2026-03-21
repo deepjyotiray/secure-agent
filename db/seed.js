@@ -1,5 +1,5 @@
 const Database = require('better-sqlite3');
-const db = new Database('./data/medical-clinic.db');
+const db = new Database('./data/rays-home-kitchen.db');
 
 db.exec(`
 CREATE TABLE users (
@@ -9,83 +9,145 @@ CREATE TABLE users (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE patients (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    date_of_birth DATE,
-    gender TEXT,
-    address TEXT,
+CREATE TABLE orders (
+    id TEXT PRIMARY KEY,
+    order_date TEXT NOT NULL,
+    order_time TEXT NOT NULL,
+    order_for TEXT NOT NULL,
+    customer_name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    address TEXT NOT NULL,
+    notes TEXT,
+    items TEXT NOT NULL,
+    extras TEXT,
+    total INTEGER NOT NULL,
+    status TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    email_sent INTEGER DEFAULT 0,
+    email_error TEXT,
+    customer_message TEXT,
+    view_token TEXT,
+    coupon_code TEXT,
+    coupon_discount INTEGER DEFAULT 0,
+    delivery_charge INTEGER DEFAULT 0,
+    expected_delivery TEXT,
+    expected_delivery_iso TEXT,
+    location_url TEXT,
+    location_lat REAL,
+    location_lng REAL,
+    location_accuracy REAL,
+    delivery_distance_km REAL,
+    payment_status TEXT,
+    delivery_status TEXT,
+    amount_paid INTEGER DEFAULT 0
 );
 
-CREATE TABLE doctors (
+CREATE TABLE menu_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    section_id INTEGER NOT NULL,
     name TEXT NOT NULL,
-    specialty TEXT NOT NULL,
-    phone TEXT NOT NULL UNIQUE,
+    price INTEGER NOT NULL,
+    veg INTEGER NOT NULL,
+    description TEXT,
+    position INTEGER,
+    available INTEGER DEFAULT 1,
+    calories INTEGER,
+    protein INTEGER,
+    carbs INTEGER,
+    fat INTEGER,
+    image TEXT,
+    served_with TEXT,
+    customizations TEXT
+);
+
+CREATE TABLE menu_sections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    menu_type TEXT NOT NULL,
+    section_key TEXT NOT NULL,
+    title TEXT NOT NULL,
+    subheading TEXT,
+    position INTEGER,
+    available INTEGER DEFAULT 1,
+    image TEXT
+);
+
+CREATE TABLE subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    address TEXT NOT NULL,
+    item_name TEXT NOT NULL,
+    total_deliveries INTEGER NOT NULL,
+    deliveries_used INTEGER DEFAULT 0,
+    order_id TEXT,
+    start_date TEXT NOT NULL,
+    expires_date TEXT NOT NULL,
+    status TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE appointments (
+CREATE TABLE subscription_deliveries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_id INTEGER NOT NULL,
-    doctor_id INTEGER NOT NULL,
-    appointment_date DATETIME NOT NULL,
-    status TEXT NOT NULL DEFAULT 'scheduled',
+    subscription_id INTEGER NOT NULL,
+    delivery_date TEXT NOT NULL,
+    notes TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (patient_id) REFERENCES patients(id),
-    FOREIGN KEY (doctor_id) REFERENCES doctors(id)
+    FOREIGN KEY (subscription_id) REFERENCES subscriptions(id)
 );
 
-CREATE TABLE inventory (
+CREATE TABLE coupons (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    product_name TEXT NOT NULL,
-    quantity INTEGER NOT NULL DEFAULT 0,
-    price REAL NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    code TEXT NOT NULL UNIQUE,
+    discount INTEGER NOT NULL,
+    min_order INTEGER NOT NULL,
+    free_delivery INTEGER DEFAULT 0,
+    active INTEGER DEFAULT 1,
+    usage_count INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    is_percent INTEGER DEFAULT 0,
+    max_discount INTEGER,
+    free_delivery_only INTEGER DEFAULT 0
 );
 
-CREATE INDEX idx_users_mobile ON users(mobile);
-CREATE INDEX idx_doctors_phone ON doctors(phone);
-CREATE INDEX idx_appointments_status ON appointments(status);
-CREATE INDEX idx_appointments_date ON appointments(appointment_date);
+CREATE INDEX idx_orders_phone ON orders(phone);
+CREATE INDEX idx_orders_status ON orders(status);
+CREATE INDEX idx_orders_created_at ON orders(created_at);
 `);
 
 const insertUser = db.prepare('INSERT INTO users (name, mobile) VALUES (?, ?)');
-const insertPatient = db.prepare('INSERT INTO patients (user_id, date_of_birth, gender, address) VALUES (?, ?, ?, ?)');
-const insertDoctor = db.prepare('INSERT INTO doctors (name, specialty, phone) VALUES (?, ?, ?)');
-const insertAppointment = db.prepare('INSERT INTO appointments (patient_id, doctor_id, appointment_date, status) VALUES (?, ?, ?, ?)');
-const insertInventory = db.prepare('INSERT INTO inventory (product_name, quantity, price) VALUES (?, ?, ?)');
+insertUser.run('Aneesh Denny', '+919003796691');
+insertUser.run('Anubhav Chauhan', '+919049700278');
+insertUser.run('Harshit Gandhi', '+919819285183');
+insertUser.run('Mayuri Rasal', '+918082040103');
+insertUser.run('Shreya Langi', '+919158256769');
 
-insertUser.run('John Doe', '919876543210');
-insertUser.run('Jane Smith', '919876543211');
-insertUser.run('Alice Johnson', '919876543212');
-insertUser.run('Bob Brown', '919876543213');
-insertUser.run('Charlie Davis', '919876543214');
+const insertOrder = db.prepare('INSERT INTO orders (id, order_date, order_time, order_for, customer_name, phone, address, items, total, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+insertOrder.run('RAY-1768453280372', '2026-01-15', '14:00:00', '2026-01-15', 'Mayuri Rasal', '+918082040103', 'Ananta Tower Building 19 1204', 'Prawns Masala + 3 Chapati/Rice bowl × 1 (Rs. 100)', 100, 'Paid');
+insertOrder.run('Manual', '2026-01-15', '14:00:00', '2026-01-15', 'Aneesh Denny', '+919003796691', 'Ananta Tower Building 19 1302', 'Chicken Korma + 3 Chapati', 110, 'Paid');
+insertOrder.run('260116_01', '2026-01-16', '14:00:00', '2026-01-16', 'Mayuri Rasal', '+918082040103', 'Ananta Tower Building 19 1204', 'Chicken Pulao x 1 (Rs.110)', 110, 'Paid');
 
-insertPatient.run(1, '1980-05-15', 'Male', '123 Main St, City');
-insertPatient.run(2, '1992-11-23', 'Female', '456 Elm St, City');
-insertPatient.run(3, '1985-07-30', 'Female', '789 Maple St, City');
-insertPatient.run(4, '1978-01-12', 'Male', '321 Oak St, City');
-insertPatient.run(5, '1990-09-05', 'Male', '654 Pine St, City');
+const insertMenuItem = db.prepare('INSERT INTO menu_items (section_id, name, price, veg, description) VALUES (?, ?, ?, ?, ?)');
+insertMenuItem.run(744, 'Steamed or Sauteed Chicken with Brown Rice, Broccoli and Veggies', 385, 0, 'Lean chicken served with brown rice, broccoli, and fresh veggies – clean, balanced, and filling.');
+insertMenuItem.run(744, 'Sprouts and Mushroom with Capsicum and Veggies', 275, 1, 'Protein-rich sprouts and mushrooms tossed with crunchy veggies for a light yet powerful meal.');
+insertMenuItem.run(744, 'Paneer with Brown Rice and Veggies', 385, 1, 'Soft paneer paired with wholesome brown rice and seasonal veggies.');
 
-insertDoctor.run('Dr. Emily White', 'Cardiology', '919876543215');
-insertDoctor.run('Dr. Michael Green', 'Neurology', '919876543216');
-insertDoctor.run('Dr. Sarah Black', 'Pediatrics', '919876543217');
-insertDoctor.run('Dr. David Blue', 'Orthopedics', '919876543218');
-insertDoctor.run('Dr. Linda Yellow', 'Dermatology', '919876543219');
+const insertMenuSection = db.prepare('INSERT INTO menu_sections (menu_type, section_key, title) VALUES (?, ?, ?)');
+insertMenuSection.run('main', 'healthy', 'Healthy Salads');
+insertMenuSection.run('main', 'healthySubs', '30 Healthy Salads');
+insertMenuSection.run('motd', 'motd', 'Today\'s Specials !');
 
-insertAppointment.run(1, 1, '2023-10-15 10:00:00', 'scheduled');
-insertAppointment.run(2, 2, '2023-10-16 11:00:00', 'scheduled');
-insertAppointment.run(3, 3, '2023-10-17 09:00:00', 'scheduled');
-insertAppointment.run(4, 4, '2023-10-18 14:00:00', 'scheduled');
-insertAppointment.run(5, 5, '2023-10-19 15:00:00', 'scheduled');
+const insertSubscription = db.prepare('INSERT INTO subscriptions (customer_name, phone, address, item_name, total_deliveries, start_date, expires_date, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+insertSubscription.run('Aneesh Denny', '+919003796691', 'Ananta Tower Building 19 1302', 'Chicken Salad Meal', 30, '2026-03-11', '2026-04-25', 'Active');
+insertSubscription.run('Aneesh Denny', '+919003796691', 'Ananta Tower Building 19 1302', 'Paneer Salad Meal', 30, '2026-03-11', '2026-04-25', 'Active');
 
-insertInventory.run('Aspirin', 100, 5.0);
-insertInventory.run('Paracetamol', 200, 3.0);
-insertInventory.run('Bandages', 150, 1.5);
-insertInventory.run('Antibiotic Cream', 50, 10.0);
-insertInventory.run('Cough Syrup', 75, 7.5);
+const insertSubscriptionDelivery = db.prepare('INSERT INTO subscription_deliveries (subscription_id, delivery_date) VALUES (?, ?)');
+insertSubscriptionDelivery.run(1, '2026-03-13');
+insertSubscriptionDelivery.run(2, '2026-03-14');
+insertSubscriptionDelivery.run(1, '2026-03-16');
+
+const insertCoupon = db.prepare('INSERT INTO coupons (code, discount, min_order) VALUES (?, ?, ?)');
+insertCoupon.run('FLAT30', 30, 300);
+insertCoupon.run('FLAT50', 50, 500);
+insertCoupon.run('SPECIALONES', 0, 600);
 
 module.exports = db;

@@ -4,26 +4,18 @@ const { parseIntent } = require("./intentParser")
 
 // ── Default heuristic word lists (generic — domain packs can override) ───────
 const DEFAULT_HEURISTICS = {
-    weather: ["weather", "rain", "raining", "sunny", "summer", "winter", "hot", "cold", "monsoon", "humidity", "forecast"],
-    menu:    ["menu", "catalog", "catalogue", "item", "items", "product", "products", "service", "services", "price", "cost", "list", "browse", "show", "available", "option", "options"],
-    order:   ["order", "delivery", "delivered", "status", "track", "eta", "invoice", "receipt", "bill", "payment", "paid", "unpaid", "resend", "refund"],
-    buy:     ["place order", "want to order", "i want", "buy", "checkout", "cart", "add", "confirm order", "purchase"],
-    support: ["problem", "issue", "complaint", "wrong", "missing", "late", "refund", "human", "manager", "agent", "support", "help"],
+    support: ["problem", "issue", "complaint", "wrong", "missing", "human", "manager", "agent", "support", "help"],
     greet:   ["hi", "hello", "hey", "namaste", "good morning", "good evening", "thanks", "thank you"],
 }
 
 // ── Default intent mapping for heuristic categories ──────────────────────────
 const DEFAULT_HEURISTIC_INTENT_MAP = {
     support: "support",
-    order:   "order_status",
-    buy:     "place_order",
-    menu:    "show_menu",
-    weather: "general_chat",
     greet:   "greet",
 }
 
 // ── Default filter fields (generic — domain packs can override) ──────────────
-const DEFAULT_FILTER_FIELDS = ["section", "query", "max_price"]
+const DEFAULT_FILTER_FIELDS = ["query"]
 
 function includesAny(message, words) {
     return words.some(word => message.includes(word))
@@ -47,15 +39,15 @@ function heuristicIntent(message, heuristics) {
     if (!lower) return { intent: "general_chat", filter: {} }
 
     const h = heuristics || DEFAULT_HEURISTICS
-    const intentMap = DEFAULT_HEURISTIC_INTENT_MAP
+    const intentMap = (heuristics && heuristics._intentMap) || DEFAULT_HEURISTIC_INTENT_MAP
 
-    // check in priority order: support > order > buy > menu > weather > greet
-    const checkOrder = ["support", "order", "buy", "menu", "weather", "greet"]
+    // check categories from heuristics (domain packs add more)
+    const checkOrder = Object.keys(h)
     for (const category of checkOrder) {
         const words = h[category]
         if (words && includesAny(lower, words)) {
             const intent = intentMap[category] || "general_chat"
-            const filter = (category === "menu" || category === "weather") ? { query: lower } : {}
+            const filter = {}
             return { intent, filter }
         }
     }

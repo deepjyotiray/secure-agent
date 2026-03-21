@@ -2,7 +2,7 @@
 
 const fs = require("fs")
 const Database = require("better-sqlite3")
-const { buildFramedQr } = require("../../../tools/buildQr")
+const { buildFramedQr } = require("./buildQr")
 const settings = require("../../../config/settings.json")
 
 const AGENT_URL    = `http://127.0.0.1:${settings.api.port}/send`
