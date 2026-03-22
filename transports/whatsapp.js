@@ -10,6 +10,7 @@ const qrcode   = require("qrcode-terminal")
 const agentChain = require("../runtime/agentChain")
 const { setSock, setConnected } = require("../transport/api")
 const debugInterceptor = require("../runtime/debugInterceptor")
+const { isAdmin } = require("../gateway/admin")
 const logger   = require("../gateway/logger")
 
 function resolveJid(jid) {
@@ -103,11 +104,20 @@ async function start() {
 
         // debug interceptor — hold message if enabled
         const held = await debugInterceptor.intercept(text, phone, rawJid, sock)
-        if (held) return // message is held for UI approval
+        if (held) return
+
+        // admin messages are logged inside agentChain.execute(); skip preview + outer log
+        const senderIsAdmin = isAdmin(phone)
+
+        // build chain-of-thought preview for customer messages
+        let preview = null
+        if (!senderIsAdmin) {
+            try { preview = await require("../runtime/previewEngine").buildPreview(text, phone) } catch (err) { logger.warn({ err: err.message }, "preview build failed") }
+        }
 
         const response = await agentChain.execute(text, phone)
         if (response) await sock.sendMessage(rawJid, { text: response })
-        debugInterceptor.logMessage(phone, text, response, null, "whatsapp")
+        if (!senderIsAdmin) debugInterceptor.logMessage(phone, text, response, null, "whatsapp", preview)
     })
 }
 

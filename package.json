@@ -19,6 +19,7 @@
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "axios": "^1.13.6",
     "better-sqlite3": "^12.6.2",
+    "canvas": "^3.2.1",
     "cheerio": "^1.2.0",
     "js-yaml": "^4.1.1",
     "node-fetch": "^2.7.0",

@@ -3,7 +3,7 @@
 const { exec } = require("child_process")
 const Database = require("better-sqlite3")
 const { complete } = require("../providers/llm")
-const { runAgentLoop } = require("./adminAgent")
+const { dispatchAgentTask } = require("./adminAgent")
 const { approveRequest, listApprovals } = require("./adminApprovals")
 const { authorizeToolCall } = require("./adminGovernance")
 const { getActiveWorkspace } = require("../core/workspace")
@@ -244,14 +244,14 @@ async function handleAdmin(payload, options = {}) {
         if (mode === "query_only" || mode === "shell_only") return `⛔ Your access level (${mode}) does not allow agentic mode.`
         const task = payload.replace(/^agent\s+/i, "").trim()
         logger.info({ task, user: user.name }, "admin: agentic mode")
-        return await runAgentLoop(task, { workspaceId, role })
+        return await dispatchAgentTask(task, { workspaceId, role })
     }
 
     // Auto-route mutations to agentic mode
     if (/\b(add|record|insert|update|change|set|delete|remove|mark)\b/i.test(payload)) {
         if (mode === "query_only" || mode === "shell_only") return `⛔ Your access level (${mode}) does not allow mutations.`
         logger.info({ payload, user: user.name }, "admin: mutation detected, routing to agent")
-        return await runAgentLoop(payload, { workspaceId, role })
+        return await dispatchAgentTask(payload, { workspaceId, role })
     }
 
     if (looksLikeShell(payload)) {

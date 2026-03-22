@@ -65,6 +65,7 @@ async function poll() {
         const data = await api("/setup/debug/status")
         updateToggleUI(data.enabled)
         renderQueue(data.held || [])
+        loadLog()
     } catch { /* silent */ }
 }
 
@@ -299,6 +300,55 @@ document.getElementById("gates-container").addEventListener("click", (e) => {
     head.closest(".gate").classList.toggle("open")
 })
 
+// ── Message Log (always-on) ──────────────────────────────────────────────────
+
+async function loadLog() {
+    try {
+        const data = await api("/setup/debug/log?limit=50")
+        renderLog(data.log || [])
+    } catch { /* silent */ }
+}
+
+function renderLog(entries) {
+    const el = document.getElementById("msg-log")
+    if (!el) return
+    if (!entries.length) { el.innerHTML = '<div style="color:var(--muted,#666);padding:8px">No messages yet.</div>'; return }
+    el.innerHTML = entries.map(function(e, i) {
+        var ago = Math.round((Date.now() - e.ts) / 1000)
+        var ageStr = ago < 60 ? ago + "s" : Math.floor(ago / 60) + "m"
+        var isAdmin = e.intent === "admin"
+        var isHeld = e.intent === "held"
+        var hasPreview = !!e.preview
+        var tag = isAdmin ? '<span style="background:#7c6ff7;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.7rem">ADMIN</span>'
+            : isHeld ? '<span style="background:#c59a27;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.7rem">HELD</span>'
+            : '<span style="background:#2a2a3a;padding:1px 5px;border-radius:3px;font-size:0.7rem">' + esc(e.intent || e.source || "customer") + '</span>'
+        var cursor = hasPreview ? 'cursor:pointer' : ''
+        return '<div class="log-entry" data-log-idx="' + i + '" style="padding:6px 0;border-bottom:1px solid var(--border,#222);' + cursor + '">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+            '<span style="font-family:monospace;color:var(--accent,#7c6ff7)">' + esc((e.phone || "").replace(/@.*$/, "").slice(-10)) + '</span>' +
+            tag + (hasPreview ? '<span style="font-size:0.65rem;color:var(--muted,#666)">▶ pipeline</span>' : '') +
+            '<span style="color:var(--muted,#666)">' + ageStr + '</span></div>' +
+            '<div style="margin:3px 0;color:var(--fg,#eee)">' + esc((e.text || "").slice(0, 120)) + '</div>' +
+            '<div style="color:var(--muted,#666);font-size:0.74rem">' + esc((e.response || "").slice(0, 150)) + '</div></div>'
+    }).join("")
+    _logEntries = entries
+}
+
+let _logEntries = []
+
+document.getElementById("msg-log").addEventListener("click", function(e) {
+    var row = e.target.closest(".log-entry")
+    if (!row) return
+    var idx = Number(row.dataset.logIdx)
+    var entry = _logEntries[idx]
+    if (!entry || !entry.preview) return
+    _selected = null
+    document.querySelectorAll(".queue-card").forEach(function(c) { c.classList.remove("selected") })
+    selectMessage({ requestId: entry.preview.requestId, phone: entry.phone, message: entry.text, preview: entry.preview, age: Math.round((Date.now() - entry.ts) / 1000) })
+})
+
+document.getElementById("log-refresh").addEventListener("click", loadLog)
+
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 ;(async () => {
@@ -307,5 +357,7 @@ document.getElementById("gates-container").addEventListener("click", (e) => {
         updateToggleUI(data.enabled)
         renderQueue(data.held || [])
         if (data.enabled) startPolling()
+        loadLog()
+        if (!data.enabled) setInterval(loadLog, 5000)
     } catch { /* page loaded without server */ }
 })()

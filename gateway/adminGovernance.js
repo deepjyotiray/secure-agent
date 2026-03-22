@@ -61,7 +61,7 @@ function extractApprovalToken(task = "") {
 }
 
 function taskSuggestsMutation(task = "") {
-    return /\b(send|message|update|change|write|install|run|open|click|fill|type|create|delete|modify|play|execute)\b/i.test(task)
+    return /\b(send|message|update|change|write|install|run|open|click|fill|type|create|delete|modify|play|execute|generate|build|deploy|restart|start|stop)\b/i.test(task)
 }
 
 function authorizeToolCall(input = {}) {

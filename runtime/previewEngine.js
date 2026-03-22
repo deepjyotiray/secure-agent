@@ -9,7 +9,8 @@ const { resolveToolHandler } = require("./executor")
 const { isComplexGoal, generatePlan, validatePlan } = require("./plannerEngine")
 const workflowStore = require("./workflowStore")
 const cartStore = require("../tools/cartStore")
-const agentChain = require("./agentChain")
+let _agentChain = null
+function agentChain() { if (!_agentChain) _agentChain = require("./agentChain"); return _agentChain }
 const logger = require("../gateway/logger")
 
 const _pending = new Map()
@@ -114,7 +115,7 @@ function buildSummary(plan, finalRisk, mode, intent, manifest) {
 // ── main builder ─────────────────────────────────────────────────────────────
 
 async function buildPreview(message, phone, workspaceId) {
-    const manifest = agentChain._manifest
+    const manifest = agentChain()._manifest
     if (!manifest) throw new Error("No agent loaded")
 
     const requestId = rid()
@@ -150,8 +151,8 @@ async function buildPreview(message, phone, workspaceId) {
     if (activeSession && activeSession.state === "support_handoff") {
         sessionOverride = { intent: "support", reason: "Session support_handoff" }
     } else if (activeSession) {
-        const cartIntent = agentChain._sessionRouting?.activeCartIntent || Object.keys(agentChain._manifest?.intents || {})[0] || "general_chat"
-        sessionOverride = { intent: cartIntent, reason: `Active session (${activeCart.state})` }
+        const cartIntent = agentChain()._sessionRouting?.activeCartIntent || Object.keys(agentChain()._manifest?.intents || {})[0] || "general_chat"
+        sessionOverride = { intent: cartIntent, reason: `Active session (${activeSession.state})` }
     } else if (activeSupport) {
         sessionOverride = { intent: "support", reason: `Active support (${activeSupport.state})` }
     }
@@ -554,7 +555,7 @@ Return: {"intent":"${defaultIntent}","filter":${filterTemplate}}`
 // ── Workflow Preview (skip planner, use stored plan) ─────────────────────────
 
 async function buildWorkflowPreview(workflowId, phone, workspaceId, params) {
-    const manifest = agentChain._manifest
+    const manifest = agentChain()._manifest
     if (!manifest) throw new Error("No agent loaded")
 
     const workflow = workflowStore.get(workflowId)

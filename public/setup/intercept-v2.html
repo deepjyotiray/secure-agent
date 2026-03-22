@@ -24,9 +24,16 @@
         <div id="queue-list" class="queue-list">
           <div class="queue-empty" id="queue-empty"><p>No messages held.</p><p class="muted">Turn on the interceptor and send a WhatsApp message.</p></div>
         </div>
+        <div style="margin-top:16px;border-top:1px solid var(--border,#222);padding-top:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <h3 style="font-size:0.9rem;font-weight:600;margin:0">Message Log</h3>
+            <button class="btn btn-ghost btn-sm" id="log-refresh">Refresh</button>
+          </div>
+          <div id="msg-log" style="max-height:40vh;overflow-y:auto;font-size:0.78rem"></div>
+        </div>
       </section>
       <section class="inspector-panel" id="inspector-panel">
-        <div class="inspector-empty" id="inspector-empty"><p>Select a held message to inspect its pipeline.</p></div>
+        <div class="inspector-empty" id="inspector-empty"><p>Select a message to inspect its pipeline.</p></div>
         <div class="inspector-content hidden" id="inspector-content">
           <div class="inspector-head"><div><strong id="ins-phone"></strong><span class="muted" id="ins-age"></span></div><div class="inspector-actions" id="ins-actions"></div></div>
           <div class="ins-message" id="ins-message"></div>

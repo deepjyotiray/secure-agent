@@ -537,6 +537,51 @@ const server = http.createServer(async (req, res) => {
         return
     }
 
+    // ── LLM Config ────────────────────────────────────────────────────────────
+
+    if (req.method === "GET" && pathname === "/setup/llm/config") {
+        const cfg = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../config/settings.json"), "utf8"))
+        const customer = cfg.llm || cfg.ollama || {}
+        const agent = cfg.admin?.agent_llm || {}
+        sendJson(res, 200, {
+            customer: { provider: customer.provider || "openai", model: customer.model || "", url: customer.url || "", api_key: customer.api_key ? "••••" + customer.api_key.slice(-4) : "" },
+            agent:    { model: agent.model || "", url: agent.url || "", api_key: agent.api_key ? "••••" + agent.api_key.slice(-4) : "" },
+            agent_backend: cfg.admin?.agent_backend || "local",
+        })
+        return
+    }
+
+    if (req.method === "PUT" && pathname === "/setup/llm/config") {
+        try {
+            const body = await readBody(req)
+            const cfg = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../config/settings.json"), "utf8"))
+            if (body.customer) {
+                if (!cfg.llm) cfg.llm = {}
+                if (body.customer.provider !== undefined) cfg.llm.provider = body.customer.provider
+                if (body.customer.model !== undefined) cfg.llm.model = body.customer.model
+                if (body.customer.url !== undefined) cfg.llm.url = body.customer.url || undefined
+                if (body.customer.api_key && !body.customer.api_key.startsWith("••••")) cfg.llm.api_key = body.customer.api_key
+            }
+            if (body.agent) {
+                if (!cfg.admin) cfg.admin = {}
+                if (!cfg.admin.agent_llm) cfg.admin.agent_llm = {}
+                if (body.agent.model !== undefined) cfg.admin.agent_llm.model = body.agent.model
+                if (body.agent.url !== undefined) cfg.admin.agent_llm.url = body.agent.url || undefined
+                if (body.agent.api_key && !body.agent.api_key.startsWith("••••")) cfg.admin.agent_llm.api_key = body.agent.api_key
+            }
+            if (body.agent_backend !== undefined) {
+                if (!cfg.admin) cfg.admin = {}
+                cfg.admin.agent_backend = body.agent_backend
+            }
+            fs.writeFileSync(path.resolve(__dirname, "../config/settings.json"), JSON.stringify(cfg, null, 2))
+            delete require.cache[require.resolve("../config/settings.json")]
+            sendJson(res, 200, { ok: true })
+        } catch (err) {
+            sendJson(res, 500, { error: err.message })
+        }
+        return
+    }
+
     if (req.method === "POST" && pathname === "/setup/admin/run") {
         try {
             const { task, mode, workspaceId, role } = await readBody(req)
@@ -717,6 +762,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── WhatsApp Debug Interceptor ───────────────────────────────────────────
+
+    if (req.method === "GET" && pathname === "/setup/debug/log") {
+        const limit = Number(url.searchParams.get("limit")) || 50
+        sendJson(res, 200, { ok: true, log: debugInterceptor.getLog(limit) })
+        return
+    }
 
     if (req.method === "GET" && pathname === "/setup/debug/status") {
         sendJson(res, 200, { enabled: debugInterceptor.isEnabled(), held: debugInterceptor.listHeld() })

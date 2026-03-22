@@ -790,13 +790,18 @@ async function runSkill(skillName, task) {
         if (!fs.existsSync(dst)) fs.copyFileSync(src, dst)
     }
 
-    // Build a ready-to-run example command for Python skills
+    // Build a ready-to-run example command
+    const jsScript = fs.readdirSync(tmpSkillDir).find(f => f.endsWith(".js"))
     const pyScript = scripts.find(f => f.endsWith(".py"))
-    const scriptHint = pyScript
-        ? `\n\nRUN THE SCRIPT EXACTLY LIKE THIS (do NOT write a new script):\n  run_shell: .venv/bin/python3 tmp/skills/${skillName}/${pyScript} <subcommand> [flags]\n\nThe script reads OPENAI_API_KEY from the environment automatically — it is already set.`
-        : ""
+    let scriptHint = ""
+    if (jsScript) {
+        scriptHint = `\n\nRUN THE SCRIPT EXACTLY LIKE THIS (do NOT write a new script):\n  run_shell: node tmp/skills/${skillName}/${jsScript} --prompt "<your prompt>" --out output/imagegen/<filename>.png\n\nThis uses Pollinations.ai — no API key needed, completely free.`
+    } else if (pyScript) {
+        scriptHint = `\n\nRUN THE SCRIPT EXACTLY LIKE THIS (do NOT write a new script):\n  run_shell: .venv/bin/python3 tmp/skills/${skillName}/${pyScript} <subcommand> [flags]\n\nThe script reads OPENAI_API_KEY from the environment automatically — it is already set.`
+    }
 
-    return `✅ Skill '${skillName}' loaded.\nScripts in tmp/skills/${skillName}/: ${scripts.join(", ") || "none"}${scriptHint}\n\nInstructions:\n${instructions}\n\nTask: ${task}`
+    const allFiles = fs.readdirSync(tmpSkillDir)
+    return `✅ Skill '${skillName}' loaded.\nScripts in tmp/skills/${skillName}/: ${allFiles.join(", ") || "none"}${scriptHint}\n\nInstructions:\n${instructions}\n\nTask: ${task}`
 }
 
 function runMacAutomation(script, type) {
@@ -1149,4 +1154,49 @@ registerGuide({
     },
 })
 
-module.exports = { runAgentLoop }
+// ── OpenClaw Gateway backend ─────────────────────────────────────────────────
+
+function runOpenClawAgent(task, options = {}) {
+    return new Promise((resolve) => {
+        const timeout = 120 // seconds
+        const args = [
+            "agent",
+            "--agent", "main",
+            "-m", task,
+            "--json",
+            "--timeout", String(timeout),
+        ]
+        logger.info({ task, backend: "openclaw" }, "admin: forwarding to OpenClaw")
+        const child = exec(`openclaw ${args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(" ")}`, {
+            timeout: (timeout + 10) * 1000,
+            env: { ...process.env },
+        }, (err, stdout, stderr) => {
+            if (err && !stdout) {
+                logger.error({ err: err.message, stderr }, "openclaw agent failed")
+                resolve(`❌ OpenClaw error: ${err.message}`)
+                return
+            }
+            try {
+                const result = JSON.parse(stdout)
+                const payloads = result.result?.payloads || []
+                const text = payloads.map(p => p.text).filter(Boolean).join("\n")
+                const model = result.result?.meta?.agentMeta?.model || "unknown"
+                const duration = result.result?.meta?.durationMs || 0
+                const reply = text || `⚠️ OpenClaw returned no text (status: ${result.status})`
+                logger.info({ model, duration, status: result.status }, "openclaw agent done")
+                resolve(reply)
+            } catch {
+                resolve(stdout.trim() || `❌ OpenClaw: unexpected output`)
+            }
+        })
+    })
+}
+
+async function dispatchAgentTask(task, options = {}) {
+    const cfg = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../config/settings.json"), "utf8"))
+    const backend = cfg.admin?.agent_backend || "local"
+    if (backend === "openclaw") return runOpenClawAgent(task, options)
+    return runAgentLoop(task, options)
+}
+
+module.exports = { runAgentLoop, runOpenClawAgent, dispatchAgentTask }

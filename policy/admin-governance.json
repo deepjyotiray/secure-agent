@@ -25,7 +25,7 @@
     "coder": ["list_tools", "read_file", "write_file", "npm_install", "run_node", "run_shell", "http_request", "query_db", "run_skill"]
   },
   "tools": {
-    "run_shell": { "category": "system", "risk": "critical", "mutating": true, "approval": "explicit", "roles": ["operator", "super_admin", "system_admin"] },
+    "run_shell": { "category": "system", "risk": "critical", "mutating": true, "approval": "task_intent", "roles": ["operator", "super_admin", "system_admin"] },
     "mac_automation": { "category": "system", "risk": "critical", "mutating": true, "approval": "explicit", "roles": ["operator", "super_admin", "system_admin"] },
     "query_db": { "category": "data", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
     "add_expense": { "category": "data", "risk": "low", "mutating": true, "approval": "none", "roles": ["observer", "operator", "super_admin", "system_admin"] },
@@ -57,6 +57,6 @@
     "run_node": { "category": "filesystem", "risk": "high", "mutating": true, "approval": "explicit", "roles": ["coder", "super_admin", "system_admin"] },
     "list_tools": { "category": "meta", "risk": "low", "mutating": false, "approval": "none", "roles": ["observer", "operator", "coder", "super_admin", "system_admin"] },
     "youtube_play": { "category": "browser", "risk": "medium", "mutating": true, "approval": "task_intent", "roles": ["operator", "super_admin", "system_admin"] },
-    "run_skill": { "category": "filesystem", "risk": "high", "mutating": true, "approval": "explicit", "roles": ["coder", "operator", "super_admin", "system_admin"] }
+    "run_skill": { "category": "filesystem", "risk": "high", "mutating": true, "approval": "task_intent", "roles": ["coder", "operator", "super_admin", "system_admin"] }
   }
 }

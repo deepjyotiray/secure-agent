@@ -49,6 +49,7 @@ async function intercept(text, phone, rawJid, sock, workspaceId) {
     if (!_enabled) return null
     const preview = await buildPreview(text, phone, workspaceId)
     _held.set(preview.requestId, { preview, phone, rawJid, text, sock, createdAt: Date.now() })
+    logMessage(phone, text, "[held]", "held", "whatsapp", preview)
     logger.info({ requestId: preview.requestId, phone }, "debug: WhatsApp message held")
     return preview
 }
@@ -61,6 +62,7 @@ async function approve(requestId) {
     try {
         const response = await agentChain.execute(entry.text, entry.phone)
         if (response && entry.sock) await entry.sock.sendMessage(entry.rawJid, { text: response })
+        logMessage(entry.phone, entry.text, response, "approved", "whatsapp", entry.preview)
         return { requestId, status: "executed", response, phone: entry.phone }
     } catch (err) {
         logger.error({ requestId, err }, "debug: approve-execute failed")
@@ -89,8 +91,8 @@ function listHeld() {
     }))
 }
 
-function logMessage(phone, text, response, intent, source) {
-    _log.push({ phone, text, response, intent, source: source || "whatsapp", ts: Date.now() })
+function logMessage(phone, text, response, intent, source, preview) {
+    _log.push({ phone, text, response, intent, source: source || "whatsapp", ts: Date.now(), preview: preview || null })
     if (_log.length > MAX_LOG) _log.shift()
 }
 

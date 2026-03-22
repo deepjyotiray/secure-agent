@@ -14,6 +14,7 @@ const logger                             = require("../gateway/logger")
 const { addTurn }                        = require("./sessionMemory")
 const { getActiveWorkspace }             = require("../core/workspace")
 const { loadPack, getPackForWorkspace }  = require("../core/domainPacks")
+const debugInterceptor                   = require("./debugInterceptor")
 
 function isSupportMenuReply(message) {
     const text = String(message || "").trim()
@@ -32,7 +33,11 @@ class AgentChain {
         // 0. Admin intercept
         if (isAdmin(phone)) {
             const admin = parseAdminMessage(message, phone)
-            if (admin.isAdmin) return await handleAdmin(admin.payload, { user: admin.user })
+            if (admin.isAdmin) {
+                const response = await handleAdmin(admin.payload, { user: admin.user })
+                debugInterceptor.logMessage(phone, message, response, "admin", "whatsapp", null)
+                return response
+            }
         }
 
         // 1. Sanitizer

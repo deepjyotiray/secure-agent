@@ -42,7 +42,7 @@ function heuristicIntent(message, heuristics) {
     const intentMap = (heuristics && heuristics._intentMap) || DEFAULT_HEURISTIC_INTENT_MAP
 
     // check categories from heuristics (domain packs add more)
-    const checkOrder = Object.keys(h)
+    const checkOrder = Object.keys(h).filter(k => k !== "_intentMap")
     for (const category of checkOrder) {
         const words = h[category]
         if (words && includesAny(lower, words)) {
