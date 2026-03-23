@@ -43,9 +43,9 @@ For complex administrative tasks sent to OpenClaw, the system uses a first-pass 
 - **Implementation**: `gateway/adminAgent.js` calls `selectRelevantTables` before building the OpenClaw prompt.
 
 #### 10. OpenClaw Workspace Optimization
-The OpenClaw workspace instructions (`AGENTS.md`) have been pruned to remove boilerplate and verbose guidelines.
-- **Benefit**: Reductions in the initial "identity" loading for every OpenClaw session (from ~7.7KB down to <1KB).
-- **Implementation**: Replaced verbose instructional sections in `~/.openclaw/workspace/AGENTS.md` with a concise summary checklist.
+The OpenClaw workspace instructions (`AGENTS.md` and `SOUL.md`) have been pruned to remove boilerplate and verbose guidelines.
+- **Benefit**: Reductions in the initial "identity" loading for every OpenClaw session. `AGENTS.md` was reduced from ~7.7KB to <1KB, and `SOUL.md` was reduced by ~50%.
+- **Implementation**: Replaced verbose sections in `~/.openclaw/workspace/` files with concise, bulleted summaries.
 
 ---
 
