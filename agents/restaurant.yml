@@ -2,17 +2,18 @@ agent:
   name: restaurant-agent
   domain: food
   version: "2.0.0"
-  description: "Ray's Home Kitchen — WhatsApp assistant"
+  description: "Healthy Meal Spot — WhatsApp assistant"
   error_message: "Something went wrong. Please try again."
-  out_of_domain_message: "I can still help in a Ray's Home Kitchen way. Ask me about dishes, prices, ordering, support, or even what sounds good to eat today."
+  out_of_domain_message: "I can still help in a Healthy Meal Spot way. Ask me about dishes, prices, ordering, support, or even what sounds good to eat today."
 
 intent_hints:
   greet: "customer says hi, hello, thanks, bye, or starts a casual conversation"
   general_chat: "customer asks a general question, recommendation, craving, weather, or small-talk that should still be answered in a business-aware way"
-  show_menu: "customer asks about menu items, dishes, availability, prices, veg or non-veg options, offers, calories, protein, fat, nutrition, healthy meals, low-calorie options, keto, diet, or any food filtering by nutritional value — this includes questions like 'meals under 400 calories' or 'high protein dishes'"
+  show_menu: "customer asks about menu items, dishes, availability, prices, veg or non-veg options, offers, calories, protein, fat, nutrition, healthy meals, low-calorie options, keto, diet, or any food filtering by nutritional value — this includes questions like 'meals under 400 calories', 'high protein dishes', or 'do you have coffee/tea/drinks'"
   order_status: "customer asks about an existing order, payment, invoice, receipt, qr code, delivery status, eta, or resend"
   place_order: "customer wants to buy, order, add to cart, checkout, or start placing an order"
   support: "customer has a problem, complaint, refund request, wrong item, missing item, allergy issue, late delivery, or wants a human"
+  policy_info: "customer asks about refund policy, replacement, returns, cancellations, delivery areas, payment methods, or how to contact us"
 
 intents:
   greet:
@@ -39,6 +40,10 @@ intents:
     tool: support_faq
     auth_required: false
 
+  policy_info:
+    tool: policy_info
+    auth_required: false
+
   unknown:
     tool: concierge
     auth_required: false
@@ -46,21 +51,29 @@ intents:
 tools:
   concierge:
     type: business_chat
-    business_name: "Ray's Home Kitchen"
+    business_name: "Healthy Meal Spot"
     cuisine: "home-style Indian food"
     tone: "warm, sharp, and naturally business-aware"
-    greeting: "Welcome to Ray's Home Kitchen."
-    signature_line: "If you're hungry, I can also suggest something from today's menu."
+    greeting: "Welcome to Healthy Meal Spot!"
+    signature_line: |
+      Stay hungry, stay healthy! 🍛🌶️🥗🥘🍤🍚🍩
+
+      Healthy Meal Spot Concierge
+      kitchen@healthymealspot.com
+      +91 95946 14752
+      https://healthymealspot.com
     db_path: "./data/orders.db"
 
   rag_menu:
     type: menu_rag
     db_path: "./data/orders.db"
     system_prompt: |
-      You are a helpful assistant for Ray's Home Kitchen.
-      Answer using ONLY the provided menu data. Be concise and well formatted.
-      Only include items relevant to what was asked. Do NOT make up items or prices.
-      If nothing matches, say so clearly.
+      You are a helpful assistant for Healthy Meal Spot.
+      Strictly answer using ONLY the provided menu data. Be concise and well formatted.
+      If the user asks for an item (like coffee, tea, beverages, etc.) and it is NOT explicitly listed in the menu data below with a price, you MUST say: "I'm sorry, we don't serve that right now." 
+      DO NOT say we have it if it's not in the data. DO NOT suggest it's available separately.
+      DO NOT include unrelated items like rice or bread when asked for beverages.
+      If nothing matches the specific request, say so clearly.
 
   order_create:
     type: order_create
@@ -79,3 +92,6 @@ tools:
     type: restaurant_support
     db_path: "./data/orders.db"
     escalation_phone: "+919594614752"
+
+  policy_info:
+    type: policy_rag

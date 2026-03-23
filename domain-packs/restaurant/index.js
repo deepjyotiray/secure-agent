@@ -4,7 +4,8 @@ const menuRag           = require("./tools/menuRag")
 const orderLookup       = require("./tools/orderLookup")
 const orderCreate       = require("./tools/orderCreate")
 const restaurantSupport = require("./tools/restaurantSupport")
-const adminTools        = require("./admin-tools")
+const policyRag          = require("./tools/policyRag")
+const adminTools         = require("./admin-tools")
 
 module.exports = {
     name: "restaurant",
@@ -18,22 +19,25 @@ module.exports = {
         order_lookup:       orderLookup,
         order_create:       orderCreate,
         restaurant_support: restaurantSupport,
+        policy_rag:         policyRag,
     },
 
     // heuristic keywords for customerRouter
     heuristics: {
-        menu:    ["menu", "dish", "dishes", "food", "eat", "hungry", "price", "veg", "nonveg", "non-veg", "thali", "biryani", "combo", "calorie", "calories", "protein", "fat", "carb", "carbs", "nutrition", "healthy", "low cal", "high protein", "keto", "diet", "catalog", "catalogue", "item", "items", "product", "products", "service", "services", "cost", "list", "browse", "show", "available", "option", "options"],
-        order:   ["order", "delivery", "delivered", "status", "track", "eta", "invoice", "receipt", "bill", "payment", "paid", "unpaid", "resend", "refund", "late"],
-        buy:     ["place order", "want to order", "i want", "buy", "checkout", "cart", "add", "confirm order", "purchase"],
-        support: ["help", "support", "complaint", "refund", "wrong", "missing", "cancel"],
+        menu_items: ["menu", "dish", "dishes", "food", "eat", "hungry", "price", "veg", "nonveg", "non-veg", "thali", "biryani", "combo", "calorie", "calories", "protein", "fat", "carb", "carbs", "nutrition", "healthy", "low cal", "high protein", "keto", "diet", "catalog", "catalogue", "item", "items", "product", "products", "service", "services", "cost", "list", "browse", "show", "available", "option", "options", "coffee", "tea", "beverage", "beverages", "drink", "drinks", "chai"],
+        order:      ["order", "delivery", "delivered", "status", "track", "eta", "invoice", "receipt", "bill", "payment", "paid", "unpaid", "resend", "refund", "late"],
+        buy:        ["place order", "want to order", "i want", "buy", "checkout", "cart", "add", "confirm order", "purchase"],
+        support:    ["help", "support", "complaint", "wrong", "missing"],
+        policy:     ["refund", "replacement", "return", "cancel", "cancellation", "delivery area", "where do you deliver", "payment method", "how to pay", "policy", "terms", "contact", "email", "phone"],
     },
 
     // intent mapping for heuristic categories
     heuristicIntentMap: {
-        menu:    "show_menu",
-        order:   "order_status",
-        buy:     "place_order",
-        support: "support",
+        menu_items: "show_menu",
+        order:      "order_status",
+        buy:        "place_order",
+        support:    "support",
+        policy:     "policy_info",
     },
 
     // filter schema for intentParser

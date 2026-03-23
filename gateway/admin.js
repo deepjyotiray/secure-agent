@@ -34,23 +34,34 @@ function isAdmin(phone) {
     return getUsers().find(u => digits.endsWith(normalizePhone(u.phone))) || null
 }
 
-// Returns { isAdmin: true, user, payload } or { isAdmin: false }
+// Returns { isAdmin: true, user, flow, payload } or { isAdmin: false }
 function parseAdminMessage(message, phone) {
     if (!message) return { isAdmin: false }
     const user = isAdmin(phone)
     if (!user) return { isAdmin: false }
 
     const parts = message.trim().split(/\s+/)
-    const keyword = getAdminCfg().keyword || "ray"
-    if (parts[0].toLowerCase() !== keyword.toLowerCase()) return { isAdmin: false }
+    const adminKeyword = getAdminCfg().keyword || "ray"
+    const agentKeyword = getAdminCfg().agent_keyword || "agent"
+    
+    let flow = null
+    let payloadIdx = 1
+
+    if (parts[0].toLowerCase() === adminKeyword.toLowerCase()) {
+        flow = "admin"
+    } else if (parts[0].toLowerCase() === agentKeyword.toLowerCase()) {
+        flow = "agent"
+    }
+
+    if (!flow) return { isAdmin: false }
 
     const userPin = user.pin !== undefined ? user.pin : (getAdminCfg().pin || "")
     if (userPin === "") {
         // no pin required — everything after keyword is payload
-        return { isAdmin: true, user, payload: parts.slice(1).join(" ") }
+        return { isAdmin: true, user, flow, payload: parts.slice(payloadIdx).join(" ") }
     }
     if (parts[1] !== userPin) return { isAdmin: false }
-    return { isAdmin: true, user, payload: parts.slice(2).join(" ") }
+    return { isAdmin: true, user, flow, payload: parts.slice(payloadIdx + 1).join(" ") }
 }
 
 // ── Shell execution ───────────────────────────────────────────────────────────
@@ -95,7 +106,7 @@ function genericDbContext(dbPath) {
     } finally { db.close() }
 }
 
-function buildDbContext(workspaceId) {
+async function buildDbContext(workspaceId) {
     const profile = loadProfile(workspaceId)
     const dbPath = profile.dbPath || getAdminCfg().db_path
 
@@ -103,7 +114,8 @@ function buildDbContext(workspaceId) {
     try {
         const pack = getPackForWorkspace(profile)
         if (pack?.buildAdminContext) {
-            return pack.buildAdminContext(dbPath)
+            // Note: pack.buildAdminContext might be async now
+            return await pack.buildAdminContext(dbPath)
         }
     } catch (err) {
         logger.warn({ err: err.message }, "admin: domain pack buildAdminContext failed, using generic")
@@ -123,9 +135,8 @@ function getDbSchema(dbPath) {
         ).all().map(t => t.name)
         return tables.map(t => {
             const cols = db.prepare(`PRAGMA table_info("${t}")`).all()
-            const sample = db.prepare(`SELECT * FROM "${t}" ORDER BY rowid DESC LIMIT 2`).all()
-            return `TABLE ${t} (${cols.map(c => `${c.name} ${c.type}`).join(", ")})\nSample rows: ${JSON.stringify(sample)}`
-        }).join("\n\n")
+            return `TABLE ${t} (${cols.map(c => c.name).join(", ")})`
+        }).join("\n")
     } finally { db.close() }
 }
 
@@ -137,6 +148,8 @@ async function queryWithLlm(question, dbContext, workspaceId) {
     const dd = String(now.getDate()).padStart(2, "0")
     const mm = String(now.getMonth() + 1).padStart(2, "0")
     const yyyy = now.getFullYear()
+
+    const adminLlmCfg = getAdminCfg().agent_llm || {}
 
     // Step 1: generate SQL
     const notes = loadNotes(workspaceId)
@@ -154,7 +167,7 @@ Question: ${question}`
 
     let sql
     try {
-        sql = (await complete(sqlPrompt) || "").trim().replace(/^```\w*\n?|\n?```$/g, "").trim()
+        sql = (await complete(sqlPrompt, adminLlmCfg) || "").trim().replace(/^```\w*\n?|\n?```$/g, "").trim()
     } catch {
         return "LLM unavailable for SQL generation. Raw data:\n" + dbContext
     }
@@ -189,7 +202,7 @@ Results (${rows.length} rows): ${JSON.stringify(rows).slice(0, 4000)}
 Provide a clear, concise answer.`
 
     try {
-        return await complete(answerPrompt) || `Query returned ${rows.length} rows:\n${JSON.stringify(rows, null, 2)}`
+        return await complete(answerPrompt, adminLlmCfg) || `Query returned ${rows.length} rows:\n${JSON.stringify(rows, null, 2)}`
     } catch {
         return `Query returned ${rows.length} rows:\n${JSON.stringify(rows, null, 2)}`
     }
@@ -197,6 +210,7 @@ Provide a clear, concise answer.`
 
 async function summaryFallback(question, dbContext) {
     const businessName = getAdminCfg().business_name || "the business"
+    const adminLlmCfg = getAdminCfg().agent_llm || {}
     const prompt = `You are an admin assistant for ${businessName}.
 Answer the admin's question using ONLY the data provided below. Be concise and use numbers/facts directly.
 Do not make up data. If something is not in the data, say so.
@@ -206,7 +220,7 @@ ${dbContext}
 Admin question: ${question}
 Answer:`
     try {
-        return await complete(prompt) || "No response from LLM."
+        return await complete(prompt, adminLlmCfg) || "No response from LLM."
     } catch {
         return "LLM unavailable. Raw data:\n" + dbContext
     }
@@ -215,15 +229,26 @@ Answer:`
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 async function handleAdmin(payload, options = {}) {
-    if (!payload) return "⚙️ Admin ready. Usage: `ray <pin> <command or question>`\n`ray <pin> agent <task>` for full agentic mode"
+    const flow = options.flow || "admin" // default to admin flow
+    if (!payload) return `⚙️ ${flow === "agent" ? "Agent" : "Admin"} ready. Usage: \`${flow === "agent" ? (getAdminCfg().agent_keyword || "agent") : (getAdminCfg().keyword || "ray")} <pin> <command or question>\``
+    
     const workspaceId = options.workspaceId || getActiveWorkspace()
     const user = options.user || {}
     const role = user.role || options.role || getAdminCfg()?.role || "super_admin"
     const mode = user.mode || "full"
 
-    logger.info({ payload, user: user.name, role, mode }, "admin: handling request")
+    logger.info({ payload, user: user.name, role, mode, flow }, "admin: handling request")
+
+    const allowedTools = flow === "agent" 
+        ? (getAdminCfg().agent_tools || ["run_shell", "mac_automation", "query_db", "send_whatsapp", "http_request", "open_browser", "screenshot", "click", "fill", "skill_call"])
+        : (getAdminCfg().tools || ["query_db", "shell"])
+
+    if (flow === "admin" && !allowedTools.includes("approvals") && /^approvals\b/i.test(payload)) {
+        // approvals not explicitly in default tools, but let's keep it functional unless blocked
+    }
 
     if (/^approvals\b/i.test(payload)) {
+        if (flow === "admin" && !allowedTools.includes("query_db")) return "⛔ Your tool allowlist does not include query/approval access."
         const approvals = listApprovals("pending", workspaceId)
         if (!approvals.length) return "No pending approvals."
         return approvals.slice(0, 10).map(a =>
@@ -233,6 +258,7 @@ async function handleAdmin(payload, options = {}) {
 
     if (/^approve\s+/i.test(payload)) {
         if (mode === "query_only") return "⛔ Your access level does not allow approvals."
+        if (flow === "admin" && !allowedTools.includes("query_db")) return "⛔ Your tool allowlist does not include approval access."
         const id = payload.replace(/^approve\s+/i, "").trim()
         const approval = approveRequest(id, workspaceId)
         if (!approval) return `Approval ${id} not found.`
@@ -240,11 +266,19 @@ async function handleAdmin(payload, options = {}) {
     }
 
     // Agentic mode — full OpenAI function-calling loop
-    if (/^agent\s+/i.test(payload)) {
-        if (mode === "query_only" || mode === "shell_only") return `⛔ Your access level (${mode}) does not allow agentic mode.`
-        const task = payload.replace(/^agent\s+/i, "").trim()
-        logger.info({ task, user: user.name }, "admin: agentic mode")
-        return await dispatchAgentTask(task, { workspaceId, role })
+    if (flow === "agent" || /^agent\s+/i.test(payload) || (flow === "admin" && getAdminCfg()?.default_to_agent)) {
+        if (mode === "query_only" || mode === "shell_only") {
+             if (flow === "agent" || !getAdminCfg()?.default_to_agent || /^agent\s+/i.test(payload)) {
+                 return `⛔ Your access level (${mode}) does not allow agentic mode.`
+             }
+             // if default_to_agent is on but mode is restricted, we fall through to existing logic
+        } else {
+            const isExplicitAgent = flow === "agent" || /^agent\s+/i.test(payload)
+            const task = payload.replace(/^agent\s+/i, "").trim()
+            logger.info({ task, user: user.name, isExplicitAgent }, "admin: agentic mode")
+            // Only set noContext: true if it's an explicit "agent" command
+            return await dispatchAgentTask(task, { workspaceId, role, noContext: isExplicitAgent })
+        }
     }
 
     // Auto-route mutations to agentic mode
@@ -256,11 +290,13 @@ async function handleAdmin(payload, options = {}) {
 
     if (looksLikeShell(payload)) {
         if (mode === "query_only" || mode === "agent_only") return `⛔ Your access level (${mode}) does not allow shell commands.`
+        if (flow === "admin" && !allowedTools.includes("shell")) return "⛔ Your tool allowlist does not include shell commands."
         const result = await runShell(payload)
         return `\`\`\`\n${result}\n\`\`\``
     }
 
     // Natural language — governance check then dynamic SQL via LLM
+    if (flow === "admin" && !allowedTools.includes("query_db")) return "⛔ Your tool allowlist does not include database queries."
     const auth = authorizeToolCall({ role, worker: "operator", tool: "query_db", task: payload, workspaceId })
     if (!auth.allowed) return `⛔ ${auth.reason}${auth.approvalHint ? "\n" + auth.approvalHint : ""}`
 
@@ -337,4 +373,13 @@ registerGuide({
     },
 })
 
-module.exports = { isAdmin, parseAdminMessage, handleAdmin, handleAdminImage, getShellPatterns, getUsers }
+module.exports = { 
+    isAdmin, 
+    parseAdminMessage, 
+    handleAdmin, 
+    handleAdminImage, 
+    getShellPatterns, 
+    getUsers, 
+    buildDbContext, 
+    getDbSchema 
+}

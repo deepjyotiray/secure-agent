@@ -542,10 +542,24 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && pathname === "/setup/llm/config") {
         const cfg = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../config/settings.json"), "utf8"))
         const customer = cfg.llm || cfg.ollama || {}
-        const agent = cfg.admin?.agent_llm || {}
+        const admin = cfg.admin?.agent_llm || {}
+        const agent = cfg.agent_llm || {}
         sendJson(res, 200, {
             customer: { provider: customer.provider || "openai", model: customer.model || "", url: customer.url || "", api_key: customer.api_key ? "••••" + customer.api_key.slice(-4) : "" },
-            agent:    { model: agent.model || "", url: agent.url || "", api_key: agent.api_key ? "••••" + agent.api_key.slice(-4) : "" },
+            admin:    { 
+                model: admin.model || "", 
+                url: admin.url || "", 
+                api_key: admin.api_key ? "••••" + admin.api_key.slice(-4) : "",
+                keyword: cfg.admin?.keyword || "ray",
+                tools: cfg.admin?.tools || ["query_db", "shell"]
+            },
+            agent:    { 
+                model: agent.model || "", 
+                url: agent.url || "", 
+                api_key: agent.api_key ? "••••" + agent.api_key.slice(-4) : "",
+                keyword: cfg.admin?.agent_keyword || "agent",
+                tools: cfg.admin?.agent_tools || ["run_shell", "mac_automation", "query_db", "send_whatsapp", "http_request", "open_browser", "screenshot", "click", "fill", "skill_call"]
+            },
             agent_backend: cfg.admin?.agent_backend || "local",
         })
         return
@@ -562,12 +576,23 @@ const server = http.createServer(async (req, res) => {
                 if (body.customer.url !== undefined) cfg.llm.url = body.customer.url || undefined
                 if (body.customer.api_key && !body.customer.api_key.startsWith("••••")) cfg.llm.api_key = body.customer.api_key
             }
-            if (body.agent) {
+            if (body.admin) {
                 if (!cfg.admin) cfg.admin = {}
                 if (!cfg.admin.agent_llm) cfg.admin.agent_llm = {}
-                if (body.agent.model !== undefined) cfg.admin.agent_llm.model = body.agent.model
-                if (body.agent.url !== undefined) cfg.admin.agent_llm.url = body.agent.url || undefined
-                if (body.agent.api_key && !body.agent.api_key.startsWith("••••")) cfg.admin.agent_llm.api_key = body.agent.api_key
+                if (body.admin.model !== undefined) cfg.admin.agent_llm.model = body.admin.model
+                if (body.admin.url !== undefined) cfg.admin.agent_llm.url = body.admin.url || undefined
+                if (body.admin.api_key && !body.admin.api_key.startsWith("••••")) cfg.admin.agent_llm.api_key = body.admin.api_key
+                if (body.admin.keyword !== undefined) cfg.admin.keyword = body.admin.keyword
+                if (body.admin.tools !== undefined) cfg.admin.tools = Array.isArray(body.admin.tools) ? body.admin.tools : String(body.admin.tools).split(",").map(s => s.trim()).filter(Boolean)
+            }
+            if (body.agent) {
+                if (!cfg.agent_llm) cfg.agent_llm = {}
+                if (body.agent.model !== undefined) cfg.agent_llm.model = body.agent.model
+                if (body.agent.url !== undefined) cfg.agent_llm.url = body.agent.url || undefined
+                if (body.agent.api_key && !body.agent.api_key.startsWith("••••")) cfg.agent_llm.api_key = body.agent.api_key
+                if (!cfg.admin) cfg.admin = {}
+                if (body.agent.keyword !== undefined) cfg.admin.agent_keyword = body.agent.keyword
+                if (body.agent.tools !== undefined) cfg.admin.agent_tools = Array.isArray(body.agent.tools) ? body.agent.tools : String(body.agent.tools).split(",").map(s => s.trim()).filter(Boolean)
             }
             if (body.agent_backend !== undefined) {
                 if (!cfg.admin) cfg.admin = {}

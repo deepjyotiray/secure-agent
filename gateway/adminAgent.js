@@ -428,7 +428,15 @@ function resolveToolDefinitions(workspaceId) {
         const pack = getPackForWorkspace(profile)
         if (pack?.adminToolDefinitions?.length) domainDefs = pack.adminToolDefinitions
     } catch {}
-    return [...CORE_TOOL_DEFINITIONS, ...domainDefs]
+    
+    const allTools = [...CORE_TOOL_DEFINITIONS, ...domainDefs]
+    const allowlist = settings.admin?.agent_tools
+    
+    if (Array.isArray(allowlist)) {
+        return allTools.filter(t => allowlist.includes(t.function.name))
+    }
+    
+    return allTools
 }
 
 // ── Shell allowlist ───────────────────────────────────────────────────────────
@@ -934,77 +942,29 @@ async function runAgentLoop(task, options = {}) {
         {
             role: "system",
             content: `You are a powerful self-healing admin agent for ${businessName}. Today is ${new Date().toDateString()}.
-
-You are operating with a planner/executor workflow.
-You have already been given a high-level plan. Follow it unless evidence forces you to adapt.
-Work step by step, keep tool use intentional, and verify results before finishing.
-You should think and act like a coordinated team of specialist workers, even though you are returning one final answer.
-
-CORE BEHAVIOUR:
-- Always use tools to complete tasks. Never say you cannot do something without trying.
-- When a tool or approach fails, diagnose WHY it failed and try a different approach automatically.
-- If a capability is missing (e.g. no search tool, blocked by bot detection, missing npm package): write the solution yourself using write_file + npm_install + run_node, then use the result.
-- If a website blocks scraping, try a different approach: use http_request with a real browser User-Agent, or write a custom Node.js fetch script, or use a free public API.
-- For web search, always use DuckDuckGo (https://html.duckduckgo.com/html/?q=) instead of Google — Google blocks all scrapers. Use write_file + run_node with axios+cheerio to fetch DuckDuckGo and parse <a class="result__a"> tags, OR use open_browser to navigate to https://html.duckduckgo.com/html/?q=your+query then scrape_page with selector 'a.result__a'.
-- If you write a script and it errors, read the error, fix the script with write_file, and run_node again.
-- Never give up after one failure. Exhaust all approaches before concluding something is impossible.
-- OPENAI_API_KEY is already injected into every shell command automatically — NEVER tell the user to set it. Just run the script.
-- For skills: call run_skill to load it, then run the scripts with run_shell python3 or run_node. The API key is already available.
-- Never refuse to run a Python script. python3, pip3, and uv are all allowed.
-- CRITICAL: When a skill provides a bundled script (e.g. text_to_speech.py), ALWAYS run that exact script with run_shell. NEVER write a new Python script to replace it. The bundled script is correct — just call it with the right arguments.
-- Keep changes inside the project workspace unless the task clearly needs an external URL or system command.
-- Prefer read-only inspection before mutation.
-- When you mutate anything, mention what you changed in the final answer.
-- Tool usage is governed by explicit policy. If a tool is blocked, adapt your plan instead of retrying the same blocked action.
-- High-risk tools may require explicit approval language in the task, such as "approved" or "go ahead and ...".
-
-SELF-HEALING EXAMPLES:
-- Web search → always use DuckDuckGo https://html.duckduckgo.com/html/?q=your+query, parse <a class="result__a"> tags with cheerio
-- npm package missing → call npm_install then retry
-- Script errors → read_file the script, fix it, write_file it back, run_node again
-- API needs a key you don't have → use an alternative free API or scrape a different source
-
-BROWSER AUTOMATION RULES — ALWAYS FOLLOW:
-1. After open_browser or navigate, ALWAYS call snapshot before interacting.
-2. snapshot returns lines like: link "Title" [ref=e249] or button "Submit" [ref=e12]. Use the ref value with click and fill.
-3. Use fill {ref, text} to type into inputs. Use click {ref} to click. NEVER use type_by_index, click_by_index, or CSS selectors.
-4. If snapshot shows no useful elements, call screenshot to see what's on screen, then wait and retry snapshot.
-5. For login flows: open_browser → snapshot → fill username ref → fill password ref → click submit ref → screenshot to verify → close_browser.
-6. Once task is done, call close_browser and return your final answer immediately.
-7. For YouTube playback use EXACTLY this pattern — do NOT deviate, do NOT take screenshots:
-   Step 1: open_browser → url: "https://www.youtube.com/results?search_query=QUERY" (spaces as +)
-   Step 2: run_shell → sleep 4
-   Step 3: snapshot → (no args) — the output will contain lines like: link "Video Title 3 minutes, 16 seconds" [ref=eXXX]
-   Step 4: click → ref: the eXXX ref of the first video link that has a duration in its name
-   Step 5: get_current_url → REQUIRED — gives you the youtube.com/watch?v=... URL. Do NOT skip this step.
-   Step 6: close_browser
-   Step 7: youtube_play → url: "<URL from step 5 or click result>"
-   DONE. youtube_play opens Chrome and starts playback automatically. Never use mac_automation for YouTube.
-AVAILABLE TOOLS: ${CORE_TOOL_DEFINITIONS.map(t => t.function.name).join(", ")}${(() => { try { const p = loadProfile(workspaceId); const pk = getPackForWorkspace(p); return pk?.adminToolDefinitions?.length ? ", " + pk.adminToolDefinitions.map(t => t.function.name).join(", ") : "" } catch { return "" } })()}
-
-${(() => { const notes = loadNotes(workspaceId); return notes ? "DATA MODEL NOTES (auto-generated for this workspace):\n" + notes : "" })()}`
+Follow the execution plan unless evidence forces adaptation. Work step by step, verify results.
+BEHAVIOUR:
+- Always use tools. Diagnose failures and retry.
+- For DuckDuckGo search: use http_request or write_file + run_node.
+- Browser automation: call snapshot before click/fill. Use ref from snapshot.
+- For YouTube: navigate to search -> snapshot -> click video link -> get_current_url -> close_browser -> youtube_play.
+- Mention mutations in final answer.
+- Tool list: ${CORE_TOOL_DEFINITIONS.map(t => t.function.name).join(", ")}${(() => { try { const p = loadProfile(workspaceId); const pk = getPackForWorkspace(p); return pk?.adminToolDefinitions?.length ? ", " + pk.adminToolDefinitions.map(t => t.function.name).join(", ") : "" } catch { return "" } })()}
+${(() => { const notes = loadNotes(workspaceId); return notes ? "NOTES: " + notes : "" })()}`
         },
         {
             role: "system",
-            content: `Task ID: ${taskState.taskId}
-
-Workspace ID: ${workspaceId}
+            content: `Execution plan: ${plan.summary}
+Steps:
+${plan.steps.map((s, i) => `${i + 1}. [${s.worker}] ${s.goal} (Tools: ${(s.preferred_tools || []).join(", ")})`).join("\n")}
 Admin role: ${adminRole}
-
-Worker roster:
-${formatWorkers()}
-
-Execution plan:
-${formatPlan(plan)}
-
-Detailed step guidance:
-${formatStepGuidance(plan)}
-
-When you finish, give a concise admin summary with:
-- outcome
-- important evidence
-- any files changed
-- any remaining risk`
+CONTEXT:
+${await (async () => {
+    try {
+        const { buildDbContext } = require("./admin")
+        return await buildDbContext(workspaceId)
+    } catch { return "No extra context available." }
+})()}`
         },
         { role: "user", content: options.imageBase64
             ? [
@@ -1156,17 +1116,50 @@ registerGuide({
 
 // ── OpenClaw Gateway backend ─────────────────────────────────────────────────
 
-function runOpenClawAgent(task, options = {}) {
-    return new Promise((resolve) => {
+async function runOpenClawAgent(task, options = {}) {
+    return new Promise(async (resolve) => {
         const timeout = 120 // seconds
+        const workspaceId = options.workspaceId || getActiveWorkspace()
+        
+        let finalTask = task
+        if (!options.noContext) {
+            // Admin flow: provide DB context and schema to OpenClaw
+            try {
+                const { buildDbContext, getDbSchema } = require("./admin")
+                const profile = loadProfile(workspaceId)
+                const dbPath = profile.dbPath || settings.admin.db_path
+                const dbContext = await buildDbContext(workspaceId)
+                const schema = getDbSchema(dbPath)
+                const notes = loadNotes(workspaceId)
+                
+                finalTask = `CONTEXT:
+${dbContext}
+
+DATABASE SCHEMA:
+${schema}
+${notes ? `\nDATA MODEL NOTES:\n${notes}` : ""}
+
+ADMIN TASK:
+${task}`
+            } catch (err) {
+                logger.warn({ err: err.message }, "OpenClaw: failed to build context, sending raw task")
+            }
+        }
+
         const args = [
             "agent",
             "--agent", "main",
-            "-m", task,
+            "-m", finalTask,
             "--json",
             "--timeout", String(timeout),
         ]
-        logger.info({ task, backend: "openclaw" }, "admin: forwarding to OpenClaw")
+
+        if (options.noContext) {
+            // args.push("--no-context") // Flag not supported by OpenClaw CLI
+            logger.info("Admin: 'noContext' requested, but OpenClaw CLI does not support '--no-context'. Skipping flag.")
+        }
+
+        logger.info({ task, backend: "openclaw", noContext: !!options.noContext }, "admin: forwarding to OpenClaw")
         const child = exec(`openclaw ${args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(" ")}`, {
             timeout: (timeout + 10) * 1000,
             env: { ...process.env },

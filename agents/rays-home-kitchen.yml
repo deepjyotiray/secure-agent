@@ -2,10 +2,10 @@ agent:
   name: rays-home-kitchen-agent
   domain: healthymealspot.com
   version: "1.0.0"
-  description: "Ray's Home Kitchen is a home-style Indian food delivery service offering freshly prepared healthy meals with nutritional information."
+  description: "Healthy Meal Spot is a home-style Indian food delivery service offering freshly prepared healthy meals with nutritional information."
   chain:
     - agents/support.yml
-  greet_message: "Hello! Welcome to Ray's Home Kitchen. We deliver healthy, home-cooked meals right to your doorstep. How can I assist you today?"
+  greet_message: "Hello! Welcome to Healthy Meal Spot. We deliver healthy, home-cooked meals right to your doorstep. How can I assist you today?"
   help_message: "I can help you browse our menu, place orders, check order status, and answer any questions about our meal plans and delivery."
   out_of_domain_message: "I'm sorry, I can only assist with queries related to our menu, orders, and delivery."
   restricted_message: "Sorry, I cannot perform that request."
@@ -74,11 +74,11 @@ tools:
     type: support
     faq_path: "./agents/support/faq.yml"
     db_path: "./data/orders.db"
-    business_name: "Ray's Home Kitchen"
+    business_name: "Healthy Meal Spot"
     escalation_phone: "919594614752"
   support_tool:
     type: support
     faq_path: "./agents/support/faq.yml"
     db_path: "./data/orders.db"
-    business_name: "Ray's Home Kitchen"
+    business_name: "Healthy Meal Spot"
     escalation_phone: "919594614752"

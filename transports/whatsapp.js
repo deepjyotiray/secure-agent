@@ -104,7 +104,16 @@ async function start() {
 
         // debug interceptor — hold message if enabled
         const held = await debugInterceptor.intercept(text, phone, rawJid, sock)
-        if (held) return
+        if (held) {
+            logger.info({ phone, text }, "message held by interceptor")
+            return
+        }
+
+        // prevent double-processing if the message was just released from hold
+        if (debugInterceptor.getLog(1).find(l => l.phone === phone && l.text === text && l.intent === "approved")) {
+             logger.info({ phone, text }, "skipping double-processing of approved message")
+             return
+        }
 
         // admin messages are logged inside agentChain.execute(); skip preview + outer log
         const senderIsAdmin = isAdmin(phone)
@@ -116,7 +125,14 @@ async function start() {
         }
 
         const response = await agentChain.execute(text, phone)
-        if (response) await sock.sendMessage(rawJid, { text: response })
+        if (response) {
+            try {
+                await sock.sendMessage(rawJid, { text: response })
+                logger.info({ phone, rawJid }, "outbound message sent")
+            } catch (err) {
+                logger.error({ phone, rawJid, err: err.message }, "outbound message failed")
+            }
+        }
         if (!senderIsAdmin) debugInterceptor.logMessage(phone, text, response, null, "whatsapp", preview)
     })
 }

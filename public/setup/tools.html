@@ -128,9 +128,9 @@
         </div>
         <div style="font-size:0.74rem;color:var(--muted);margin-top:4px">OpenClaw routes through your gateway (uses your ChatGPT/Codex subscription). Local uses the API key below.</div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:4px 0">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;padding:4px 0">
         <div>
-          <div style="font-weight:600;font-size:0.82rem;margin-bottom:8px;color:var(--muted)">CUSTOMER (Intent Classifier)</div>
+          <div style="font-weight:600;font-size:0.82rem;margin-bottom:8px;color:var(--muted)">CUSTOMER FLOW</div>
           <label class="field" style="margin-bottom:6px"><span>Preset</span>
             <select id="llm-c-preset" style="font-size:0.82rem;padding:4px 6px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);width:100%">
               <option value="">Custom</option>
@@ -146,7 +146,8 @@
           <label class="field" style="margin-bottom:6px"><span>API Key</span><input id="llm-c-key" type="password" style="font-size:0.82rem;padding:4px 6px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);width:100%"></label>
         </div>
         <div>
-          <div style="font-weight:600;font-size:0.82rem;margin-bottom:8px;color:var(--muted)">ADMIN AGENT</div>
+          <div style="font-weight:600;font-size:0.82rem;margin-bottom:8px;color:var(--muted)">ADMIN FLOW</div>
+          <label class="field" style="margin-bottom:6px"><span>Keyword</span><input id="llm-a-keyword" placeholder="e.g. ray" style="font-size:0.82rem;padding:4px 6px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);width:100%"></label>
           <label class="field" style="margin-bottom:6px"><span>Preset</span>
             <select id="llm-a-preset" style="font-size:0.82rem;padding:4px 6px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);width:100%">
               <option value="">Custom</option>
@@ -159,6 +160,24 @@
           <label class="field" style="margin-bottom:6px"><span>Model</span><input id="llm-a-model" style="font-size:0.82rem;padding:4px 6px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);width:100%"></label>
           <label class="field" style="margin-bottom:6px"><span>Base URL</span><input id="llm-a-url" placeholder="(default: OpenAI)" style="font-size:0.82rem;padding:4px 6px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);width:100%"></label>
           <label class="field" style="margin-bottom:6px"><span>API Key</span><input id="llm-a-key" type="password" style="font-size:0.82rem;padding:4px 6px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);width:100%"></label>
+          <label class="field" style="margin-bottom:6px"><span>Allowed Tools</span><input id="llm-a-tools" placeholder="query_db, shell" style="font-size:0.82rem;padding:4px 6px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);width:100%"></label>
+        </div>
+        <div>
+          <div style="font-weight:600;font-size:0.82rem;margin-bottom:8px;color:var(--muted)">AGENT FLOW</div>
+          <label class="field" style="margin-bottom:6px"><span>Keyword</span><input id="llm-ag-keyword" placeholder="e.g. agent" style="font-size:0.82rem;padding:4px 6px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);width:100%"></label>
+          <label class="field" style="margin-bottom:6px"><span>Preset</span>
+            <select id="llm-ag-preset" style="font-size:0.82rem;padding:4px 6px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);width:100%">
+              <option value="">Custom</option>
+              <option value="openai">OpenAI</option>
+              <option value="groq">Groq (free)</option>
+              <option value="gemini">Google Gemini (free)</option>
+              <option value="openrouter">OpenRouter</option>
+            </select>
+          </label>
+          <label class="field" style="margin-bottom:6px"><span>Model</span><input id="llm-ag-model" style="font-size:0.82rem;padding:4px 6px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);width:100%"></label>
+          <label class="field" style="margin-bottom:6px"><span>Base URL</span><input id="llm-ag-url" placeholder="(default: OpenAI)" style="font-size:0.82rem;padding:4px 6px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);width:100%"></label>
+          <label class="field" style="margin-bottom:6px"><span>API Key</span><input id="llm-ag-key" type="password" style="font-size:0.82rem;padding:4px 6px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);width:100%"></label>
+          <label class="field" style="margin-bottom:6px"><span>Allowed Tools</span><input id="llm-ag-tools" placeholder="run_shell, query_db, etc" style="font-size:0.82rem;padding:4px 6px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);width:100%"></label>
         </div>
       </div>
       <button class="btn btn-primary btn-sm" id="llm-save" style="margin-top:8px">Save</button>
@@ -567,9 +586,19 @@
         $("llm-c-provider").value = d.customer.provider || "openai"
         $("llm-c-model").value = d.customer.model || ""
         $("llm-c-key").value = d.customer.api_key || ""
-        $("llm-a-model").value = d.agent.model || ""
-        $("llm-a-url").value = d.agent.url || ""
-        $("llm-a-key").value = d.agent.api_key || ""
+
+        $("llm-a-model").value = d.admin.model || ""
+        $("llm-a-url").value = d.admin.url || ""
+        $("llm-a-key").value = d.admin.api_key || ""
+        $("llm-a-keyword").value = d.admin.keyword || "ray"
+        $("llm-a-tools").value = Array.isArray(d.admin.tools) ? d.admin.tools.join(", ") : d.admin.tools || ""
+
+        $("llm-ag-model").value = d.agent.model || ""
+        $("llm-ag-url").value = d.agent.url || ""
+        $("llm-ag-key").value = d.agent.api_key || ""
+        $("llm-ag-keyword").value = d.agent.keyword || "agent"
+        $("llm-ag-tools").value = Array.isArray(d.agent.tools) ? d.agent.tools.join(", ") : d.agent.tools || ""
+
         if (d.agent_backend === "openclaw") $("llm-be-openclaw").checked = true
         else $("llm-be-local").checked = true
       } catch {}
@@ -583,12 +612,14 @@
     }
     $("llm-c-preset").addEventListener("change", function() { applyPreset("c", this.value) })
     $("llm-a-preset").addEventListener("change", function() { applyPreset("a", this.value) })
+    $("llm-ag-preset").addEventListener("change", function() { applyPreset("ag", this.value) })
     $("llm-save").addEventListener("click", async function() {
       try {
         var backend = $("llm-be-openclaw").checked ? "openclaw" : "local"
         await api("/setup/llm/config", "PUT", {
           customer: { provider: $("llm-c-provider").value, model: $("llm-c-model").value, api_key: $("llm-c-key").value },
-          agent:    { model: $("llm-a-model").value, url: $("llm-a-url").value, api_key: $("llm-a-key").value },
+          admin:    { model: $("llm-a-model").value, url: $("llm-a-url").value, api_key: $("llm-a-key").value, keyword: $("llm-a-keyword").value, tools: $("llm-a-tools").value },
+          agent:    { model: $("llm-ag-model").value, url: $("llm-ag-url").value, api_key: $("llm-ag-key").value, keyword: $("llm-ag-keyword").value, tools: $("llm-ag-tools").value },
           agent_backend: backend,
         })
         $("llm-status").textContent = "✓ Saved"

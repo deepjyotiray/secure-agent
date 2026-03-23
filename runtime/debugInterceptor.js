@@ -23,12 +23,17 @@ setInterval(() => {
 
 async function _autoExecute(requestId) {
     const entry = _held.get(requestId)
-    if (!entry) return
+    if (!entry || entry.executing) return
+    entry.executing = true
     _held.delete(requestId)
+    logger.info({ requestId, phone: entry.phone }, "debug: auto-executing held message")
     try {
         const agentChain = require("./agentChain")
         const response = await agentChain.execute(entry.text, entry.phone)
-        if (response && entry.sock) await entry.sock.sendMessage(entry.rawJid, { text: response })
+        if (response && entry.sock) {
+            await entry.sock.sendMessage(entry.rawJid, { text: response })
+            logger.info({ requestId, phone: entry.phone }, "debug: auto-execute response sent")
+        }
     } catch (err) {
         logger.error({ requestId, err }, "debug: auto-execute failed")
     }
@@ -40,7 +45,9 @@ function setEnabled(val) {
     _enabled = !!val
     logger.info({ enabled: _enabled }, "debug interceptor toggled")
     if (!_enabled) {
-        for (const id of [..._held.keys()]) _autoExecute(id)
+        for (const id of [..._held.keys()]) {
+            _autoExecute(id).catch(err => logger.error({ id, err }, "debug: manual flush failed"))
+        }
     }
     return _enabled
 }
@@ -56,7 +63,8 @@ async function intercept(text, phone, rawJid, sock, workspaceId) {
 
 async function approve(requestId) {
     const entry = _held.get(requestId)
-    if (!entry) return { error: "not_found" }
+    if (!entry || entry.executing) return { error: "not_found_or_executing" }
+    entry.executing = true
     _held.delete(requestId)
     const agentChain = require("./agentChain")
     try {

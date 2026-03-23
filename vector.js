@@ -74,8 +74,53 @@ function buildChunks(db) {
     chunks.push({
         id: "general",
         type: "info",
-        keywords: "order place how website delivery contact",
-        text: `Your Business — Products and services.\n\nTo place an order visit your website.\nFor help, reply with "help" or "menu".`
+        keywords: "order place how website delivery contact info about business",
+        text: `Healthy Meal Spot — home-style Indian food.\n\nTo place an order visit our website at healthymealspot.com.\nFor help, reply with "help" or "menu".\nContact: kitchen@healthymealspot.com | +91 95946 14752`
+    })
+
+    // ── Policy ─────────────────────────────────────────────────────────────
+    const policyPath = "./data/restaurant_policy.txt"
+    if (require("fs").existsSync(policyPath)) {
+        const policyContent = require("fs").readFileSync(policyPath, "utf-8")
+        const policySections = policyContent.split(/\n(?=\d+\.)/)
+        for (let i = 0; i < policySections.length; i++) {
+            const section = policySections[i].trim()
+            if (!section) continue
+            const titleMatch = section.match(/^\d+\.\s*(.+):/)
+            const title = titleMatch ? titleMatch[1] : `Policy Section ${i + 1}`
+            chunks.push({
+                id: `policy_${i + 1}`,
+                type: "policy",
+                keywords: `policy ${title.toLowerCase()} refund return cancellation delivery payment contact`,
+                text: section
+            })
+        }
+    }
+
+    // ── Admin knowledge ────────────────────────────────────────────────────
+    chunks.push({
+        id: "admin_kpi_definitions",
+        type: "admin",
+        keywords: "kpi revenue profit orders summary business health formula",
+        text: `BUSINESS KPI DEFINITIONS:
+- Today's Revenue: SUM(total) from orders where order_for = current_date and payment_status = 'Paid'
+- Month's Revenue: SUM(total) from orders where payment_status = 'Paid' and order_date starts with current_month
+- Monthly Net Profit: (Total Revenue + Other Income) - Total Expenses
+- Active Orders: count of orders with delivery_status NOT IN ('Delivered', 'Cancelled')
+- Active Subscriptions: count of subscriptions with status = 'Active'
+- Actual Deliveries: count from subscription_deliveries grouped by subscription_id`
+    })
+
+    chunks.push({
+        id: "admin_query_guide",
+        type: "admin",
+        keywords: "query database tables sql help how to join",
+        text: `ADMIN QUERY GUIDE:
+- Table "orders": stores customer orders, statuses (payment_status, delivery_status), and totals.
+- Table "expenses": stores daily business expenses and non-order income.
+- Table "subscriptions": stores long-term meal plans. Join with "subscription_deliveries" on subscription_id to count delivered meals.
+- For business health checks, always check current month's revenue vs expenses.
+- Current date is provided in the system prompt. Use it for date-based queries.`
     })
 
     return chunks

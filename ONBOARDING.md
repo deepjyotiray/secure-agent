@@ -117,7 +117,7 @@ This file is gitignored. Create it with your real values:
     ],
     "shell_patterns": ["pm2", "tail", "cat", "ls", "df", "du", "uptime", "node", "npm", "kill", "ping"],
     "db_path": "<absolute path to ray-orders-backend/orders.db>",
-    "business_name": "Ray's Home Kitchen",
+    "business_name": "Healthy Meal Spot",
     "agent_llm": {
       "model": "gpt-4o-mini",
       "api_key": "<your-openai-api-key>"
@@ -222,7 +222,7 @@ Send these messages from **any phone** (not the linked one) to the WhatsApp numb
 
 | Test | Message | Expected |
 |---|---|---|
-| Greeting | `hi` | Warm welcome from Ray's Home Kitchen |
+| Greeting | `hi` | Warm welcome from Healthy Meal Spot |
 | Menu browse | `show me veg items` | List of vegetarian dishes with prices |
 | Nutrition filter | `high protein meals` | Filtered menu items |
 | Coupon check | `any offers?` | Active coupons list |

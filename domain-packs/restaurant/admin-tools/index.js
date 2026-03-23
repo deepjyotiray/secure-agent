@@ -87,93 +87,33 @@ function dispatch(toolName, args, dbPath) {
     }
 }
 
-// ── Admin context builder (restaurant-specific business summary) ──────────────
+const { retrieveContext } = require("../../../rag")
 
-function buildAdminContext(dbPath) {
-    const db = new Database(dbPath, { readonly: true })
+// ── Admin context builder (uses RAG to provide business knowledge) ──────────────
+
+async function buildAdminContext() {
     try {
         const now = new Date()
-        const thisMonth = now.toISOString().slice(0, 7)
-        const thisYear  = now.toISOString().slice(0, 4)
-        const today     = now.toISOString().slice(0, 10)
-
-        const todayOrders = db.prepare(`
-            SELECT id, customer_name, phone, total, delivery_status, payment_status, order_for, expected_delivery
-            FROM orders WHERE order_for = ?
-            ORDER BY created_at DESC
-        `).all(today)
-
-        const todayRevenue = todayOrders.filter(o => o.payment_status === "Paid").reduce((s, o) => s + o.total, 0)
-
-        const monthRevenue = db.prepare(`
-            SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as cnt
-            FROM orders WHERE payment_status='Paid' AND order_date LIKE ?
-        `).get(`${thisMonth}%`)
-
-        const monthExpenses = db.prepare(`
-            SELECT COALESCE(SUM(expense),0) as exp, COALESCE(SUM(income),0) as inc
-            FROM expenses WHERE entry_date LIKE ? OR entry_date LIKE ?
-        `).get(`${thisMonth}%`, `%/${now.getMonth()+1 < 10 ? '0'+(now.getMonth()+1) : now.getMonth()+1}/${thisYear}`)
-
-        const yearRevenue = db.prepare(`
-            SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as cnt
-            FROM orders WHERE payment_status='Paid' AND order_date LIKE ?
-        `).get(`${thisYear}%`)
-
-        const yearExpenses = db.prepare(`
-            SELECT COALESCE(SUM(expense),0) as exp, COALESCE(SUM(income),0) as inc
-            FROM expenses WHERE entry_date LIKE ? OR entry_date LIKE ?
-        `).get(`${thisYear}%`, `%/${thisYear}`)
-
-        const activeOrders = db.prepare(`
-            SELECT id, customer_name, phone, total, delivery_status, payment_status, order_for, expected_delivery
-            FROM orders WHERE delivery_status NOT IN ('Delivered','Cancelled')
-            ORDER BY created_at DESC LIMIT 20
-        `).all()
-
-        const recentOrders = db.prepare(`
-            SELECT id, customer_name, phone, total, delivery_status, payment_status, order_for
-            FROM orders ORDER BY created_at DESC LIMIT 10
-        `).all()
-
-        const unpaidOrders = db.prepare(`
-            SELECT id, customer_name, phone, total, order_for
-            FROM orders WHERE payment_status != 'Paid' AND delivery_status NOT IN ('Delivered','Cancelled')
-            ORDER BY created_at DESC
-        `).all()
-
+        const todayStr = now.toISOString().slice(0, 10)
+        
+        // Retrieve relevant admin and business context from vector DB
+        const knowledge = await retrieveContext("admin business KPI definitions summary dashboard", { type: "admin" })
+        
         return `
-=== BUSINESS SUMMARY ===
-Date: ${now.toDateString()} (${today})
+=== BUSINESS KNOWLEDGE ===
+Current Date: ${now.toDateString()} (${todayStr})
 
-Today (${today}):
-- Orders: ${todayOrders.length}
-- Paid revenue: ₹${todayRevenue}
-- Orders detail:
-${todayOrders.map(o => `  • ${o.id} | ${o.customer_name} | ₹${o.total} | Delivery: ${o.delivery_status} | Payment: ${o.payment_status}`).join("\n") || "  None"}
+${knowledge}
 
-This Month (${thisMonth}):
-- Revenue from orders: ₹${monthRevenue.rev} (${monthRevenue.cnt} paid orders)
-- Expenses: ₹${monthExpenses.exp}
-- Other income: ₹${monthExpenses.inc}
-- Net profit: ₹${monthRevenue.rev + monthExpenses.inc - monthExpenses.exp}
-
-This Year (${thisYear}):
-- Revenue from orders: ₹${yearRevenue.rev} (${yearRevenue.cnt} paid orders)
-- Expenses: ₹${yearExpenses.exp}
-- Other income: ₹${yearExpenses.inc}
-- Net profit: ₹${yearRevenue.rev + yearExpenses.inc - yearExpenses.exp}
-
-Active Orders (${activeOrders.length}):
-${activeOrders.map(o => `- ${o.id} | ${o.customer_name} | ${o.phone} | ₹${o.total} | Delivery: ${o.delivery_status} | Payment: ${o.payment_status} | For: ${o.order_for} by ${o.expected_delivery}`).join("\n") || "None"}
-
-Unpaid Active Orders (${unpaidOrders.length}):
-${unpaidOrders.map(o => `- ${o.id} | ${o.customer_name} | ${o.phone} | ₹${o.total} | For: ${o.order_for}`).join("\n") || "None"}
-
-Recent Orders (last 10):
-${recentOrders.map(o => `- ${o.id} | ${o.customer_name} | ₹${o.total} | ${o.delivery_status} | ${o.payment_status}`).join("\n")}
+---
+USE TOOLS TO GET LIVE DATA:
+- query_db: use for SQL queries to get revenue, orders, and subscriptions.
+- server_health: use to check system status.
+- run_shell: use for process logs or server commands.
 `.trim()
-    } finally { db.close() }
+    } catch (err) {
+        return `⚠️ Context retrieval failed: ${err.message}`
+    }
 }
 
 // ── Vision prompt for expense image parsing ───────────────────────────────────

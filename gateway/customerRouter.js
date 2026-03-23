@@ -34,12 +34,12 @@ function normalizeFilter(filter = {}, filterFields) {
     return out
 }
 
-function heuristicIntent(message, heuristics) {
+function heuristicIntent(message, heuristics, intentMapOverride) {
     const lower = message.trim().toLowerCase()
     if (!lower) return { intent: "general_chat", filter: {} }
 
     const h = heuristics || DEFAULT_HEURISTICS
-    const intentMap = (heuristics && heuristics._intentMap) || DEFAULT_HEURISTIC_INTENT_MAP
+    const intentMap = intentMapOverride || (heuristics && heuristics._intentMap) || DEFAULT_HEURISTIC_INTENT_MAP
 
     // check categories from heuristics (domain packs add more)
     const checkOrder = Object.keys(h).filter(k => k !== "_intentMap")
@@ -72,8 +72,15 @@ function resolveFilterConfig(manifest) {
 async function routeCustomerMessage(message, manifest) {
     const configuredIntents = Object.keys(manifest.intents || {})
     const domainHeuristics = resolveHeuristics(manifest)
+    const domainIntentMap = manifest._domainPackHeuristicIntentMap || null
     const filterConfig = resolveFilterConfig(manifest)
-    const heuristic = heuristicIntent(message, domainHeuristics)
+    const heuristic = heuristicIntent(message, domainHeuristics, domainIntentMap)
+
+    // Optimization: If heuristic finds a strong match (like 'greet' or 'support'), 
+    // and it's in our manifest, skip the LLM call for intent parsing.
+    if (heuristic.intent && heuristic.intent !== "general_chat" && configuredIntents.includes(heuristic.intent)) {
+        return { intent: heuristic.intent, filter: normalizeFilter(heuristic.filter, filterConfig.fields) }
+    }
 
     const parsed = await parseIntent(message, {
         allowedIntents: configuredIntents,

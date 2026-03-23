@@ -34,7 +34,7 @@ class AgentChain {
         if (isAdmin(phone)) {
             const admin = parseAdminMessage(message, phone)
             if (admin.isAdmin) {
-                const response = await handleAdmin(admin.payload, { user: admin.user })
+                const response = await handleAdmin(admin.payload, { user: admin.user, flow: admin.flow })
                 debugInterceptor.logMessage(phone, message, response, "admin", "whatsapp", null)
                 return response
             }
@@ -82,15 +82,23 @@ class AgentChain {
         // 3. Intent router — manifest-driven business classification
         let intent, filter
         try {
-            const result = await routeCustomerMessage(message, this._manifest)
-            intent = result.intent
-            filter = result.filter || {}
+            // Check if intent was already parsed by previewEngine in this process
+            const { getCachedIntent } = require("./previewEngine")
+            const cached = getCachedIntent(phone, message)
+            if (cached) {
+                intent = cached.intent
+                filter = cached.filter || {}
+                logger.info({ phone, intent, source: "cache" }, "chain: intent parsed (cached)")
+            } else {
+                const result = await routeCustomerMessage(message, this._manifest)
+                intent = result.intent
+                filter = result.filter || {}
+                logger.info({ phone, intent }, "chain: intent parsed")
+            }
         } catch {
             intent = "general_chat"
             filter = {}
         }
-
-        logger.info({ phone, intent }, "chain: intent parsed")
 
         // 4. Guard — fallback to public concierge if route is unknown
         if (!this._manifest.intents[intent]) {
@@ -100,10 +108,17 @@ class AgentChain {
         // 5. Execute
         try {
             const response = await executor.execute(this._manifest, { intent, filter }, { phone, rawMessage: message })
-            if (response !== null && response !== undefined) {
-                addTurn(phone, message, response, intent)
+            if (response) {
                 return response
             }
+
+            // check domain gate as fallback for empty/out-of-domain responses
+            const { isInDomain } = require("../gateway/policyEngine")
+            if (!isInDomain(message, getActiveWorkspace())) {
+                return this._manifest.agent.out_of_domain_message || "I can only help with business-related questions."
+            }
+
+            return this._manifest.agent.error_message || "I'm sorry, I couldn't process that. How else can I help?"
         } catch (err) {
             logger.error({ phone, intent, err }, "chain: executor error")
         }

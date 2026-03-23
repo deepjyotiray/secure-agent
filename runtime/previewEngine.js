@@ -14,14 +14,26 @@ function agentChain() { if (!_agentChain) _agentChain = require("./agentChain");
 const logger = require("../gateway/logger")
 
 const _pending = new Map()
+const _intentCache = new Map()
 const PREVIEW_TTL = 10 * 60 * 1000
+const INTENT_CACHE_TTL = 30 * 1000 // 30 seconds
 
 setInterval(() => {
     const now = Date.now()
     for (const [id, p] of _pending) {
         if (now - new Date(p.preview.timestamp).getTime() > PREVIEW_TTL) _pending.delete(id)
     }
+    for (const [key, val] of _intentCache) {
+        if (now - val.timestamp > INTENT_CACHE_TTL) _intentCache.delete(key)
+    }
 }, 60_000).unref()
+
+function getCachedIntent(phone, message) {
+    const key = `${phone}:${message}`
+    const cached = _intentCache.get(key)
+    if (cached && Date.now() - cached.timestamp < INTENT_CACHE_TTL) return cached.data
+    return null
+}
 
 // ── Execution Policy ─────────────────────────────────────────────────────────
 
@@ -210,6 +222,7 @@ async function buildPreview(message, phone, workspaceId) {
             })
             llmIntent = result.intent
             llmFilter = result.filter || {}
+            _intentCache.set(`${phone}:${message}`, { timestamp: Date.now(), data: result })
         } catch { llmIntent = null }
 
         const agreed = llmIntent === heuristic.intent
@@ -638,4 +651,5 @@ async function buildWorkflowPreview(workflowId, phone, workspaceId, params) {
 module.exports = {
     buildPreview, buildWorkflowPreview, approveAndExecute, reject, getPending, listPending, getEntry,
     setExecutionPolicy, getExecutionPolicy, setAutoMode, isAutoMode, registerRiskMap,
+    getCachedIntent
 }

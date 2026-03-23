@@ -1,0 +1,3 @@
+OPENAI_API_KEY is set.
+Calling Image API (generation). This can take up to a couple of minutes.
+Generation completed in 38.7s.
