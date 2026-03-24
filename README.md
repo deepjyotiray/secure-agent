@@ -153,11 +153,13 @@ It is **not** used for:
 - direct order lookup
 - direct DB-backed support escalation flow
 
-So the short version is:
+The live rule is simpler than the older mixed model:
 
-`customer message` → `intent router` → `chosen tool`
+- If `Customer Flow` mode is `LLM`, the customer request stays on the LLM path.
+- If `Customer Flow` mode is `Backend Service`, the full customer request is sent to the backend service.
+- In backend mode, customer requests carry workspace context: profile facts, DB context, schema, notes, retrieval hints, and recent chat history.
 
-and only **some** chosen tools use the customer LLM/backend.
+The `Agent Flow` still obeys its own mode, but it does **not** get business context injected.
 
 ---
 
@@ -176,11 +178,14 @@ The program first checks the **flow hotword**, then the **PIN for that exact flo
 - wrong hotword → treated like a normal customer message
 - correct hotword + wrong PIN → explicit wrong PIN error for that flow
 
-After auth, it looks at what's left:
+After auth, the selected flow mode decides the execution path:
 
-- **Looks like a shell command** (`pm2 status`, `tail logs/agent.log`) → runs it directly on your Mac and sends back the output
-- **Starts with `agent`** → hands it to the full AI agent loop (see below)
-- **Anything else** → pulls a live snapshot of your business data from the DB (today's orders, this month's revenue, expenses, unpaid orders) and asks the LLM to answer your question using only that data. So "how much did I make today" just works.
+- **Admin Flow = `LLM`** → admin requests use the direct admin LLM path with workspace context
+- **Admin Flow = `Backend Service`** → admin requests go to the configured backend service with workspace context
+- **Agent Flow = `LLM`** → agent requests use the local agent loop
+- **Agent Flow = `Backend Service`** → agent requests go to the configured backend service with no business context
+
+The Models page is the source of truth. Each flow is always either `LLM` or `Backend Service`.
 
 #### Image messages
 

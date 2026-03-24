@@ -1197,19 +1197,7 @@ function renderMessagesForOpenClaw(messages = []) {
 }
 
 async function runOpenClawAgent(task, options = {}) {
-    const flow = (options.backend === 'openclaw' || options.backend === 'myclaw' || options.backend === 'nemoclaw') ? 'agent' : (options.flow || 'agent')
-    const llm = getLlm()
-    const resolveFlowConfig = llm && typeof llm.getFlowConfig === "function"
-        ? llm.getFlowConfig.bind(llm)
-        : null
-    const flowCfg = resolveFlowConfig ? resolveFlowConfig(flow) : {}
-    
-    // Check if we should use a specific backend instead of direct LLM
-    if (flowCfg.backend && flowCfg.backend !== 'direct' && !options._backend_redirect) {
-        const BackendAdapter = require("../providers/adapters/backend")
-        const adapter = new BackendAdapter(flowCfg)
-        return await adapter.complete(task, { ...options, flow, _backend_redirect: true })
-    }
+    const flow = options.flow || "agent"
 
     return new Promise(async (resolve) => {
         const executionFlow = options.flow || flow || "agent"
@@ -1374,16 +1362,11 @@ ${task}`
 }
 
 async function dispatchAgentTask(task, options = {}) {
-    const cfg = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../config/settings.json"), "utf8"))
-    const backend = options.backend || cfg.admin?.agent_backend || "local"
-    const isExplicitAgentFlow = options.flow === "agent"
-
-    // Explicit `agent` commands need the local tool loop because it is the only
-    // path that actually executes mac/browser/db tools today.
-    if (isExplicitAgentFlow && !options._backend_redirect) {
-        logger.info({ task, flow: options.flow, backend }, "adminAgent: using local tool loop for explicit agent flow")
-        return runAgentLoop(task, options)
-    }
+    const llm = getLlm()
+    const resolved = llm && typeof llm.getFlowConfig === "function"
+        ? llm.getFlowConfig(options.flow || "agent")
+        : {}
+    const backend = options.backend || resolved.backend || "local"
 
     if (backend === "openclaw" || backend === "myclaw" || backend === "nemoclaw") {
         return runOpenClawAgent(task, { ...options, backend })

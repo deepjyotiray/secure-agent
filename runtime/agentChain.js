@@ -12,10 +12,77 @@ const { dispatchAgentTask }               = require("../gateway/adminAgent")
 const cartStore                          = require("../tools/cartStore")
 const executor                           = require("./executor")
 const logger                             = require("../gateway/logger")
-const { addTurn }                        = require("./sessionMemory")
+const { addTurn, getHistory }            = require("./sessionMemory")
 const { getActiveWorkspace }             = require("../core/workspace")
 const { loadPack, getPackForWorkspace }  = require("../core/domainPacks")
 const debugInterceptor                   = require("./debugInterceptor")
+const { getFlowConfig, complete }        = require("../providers/llm")
+const { prepareRequest }                 = require("./contextPipeline")
+const { loadProfile }                    = require("../setup/profileService")
+const { loadNotes }                      = require("../core/dataModelNotes")
+const { buildDbContext, getDbSchema, selectRelevantTables } = require("../gateway/admin")
+
+function buildProfileFacts(profile = {}) {
+    const lines = []
+    for (const [k, v] of Object.entries(profile)) {
+        if (!v || typeof v !== "string") continue
+        if (["openaiKey", "workspaceId", "agentManifest", "domainPack", "scrapeWebsite", "customFields"].includes(k)) continue
+        lines.push(`- ${k}: ${v}`)
+    }
+    const custom = Array.isArray(profile.customFields) ? profile.customFields : []
+    for (const field of custom) {
+        if (!field?.key || !field?.value) continue
+        lines.push(`- ${field.key}: ${field.value}`)
+    }
+    return lines.join("\n") || "No profile data available."
+}
+
+async function loadCustomerRagHints(message, dbPath) {
+    try {
+        if (!dbPath) return ""
+        const rag = require("../tools/genericRagTool")
+        const result = await rag.execute({}, { rawMessage: message, skipLlm: true }, { db_path: dbPath })
+        if (!result || /nothing matched/i.test(result)) return ""
+        return result.split("\n").slice(0, 12).join("\n")
+    } catch {
+        return ""
+    }
+}
+
+async function answerCustomerViaConfiguredMode(message, phone, manifest) {
+    const workspaceId = getActiveWorkspace()
+    const flowCfg = getFlowConfig("customer")
+    const profile = loadProfile(workspaceId)
+    const dbPath = profile.dbPath
+    const relevantTables = await selectRelevantTables(message, workspaceId)
+    const dbContext = await buildDbContext(workspaceId, relevantTables)
+    const schema = dbPath ? getDbSchema(dbPath, relevantTables) : ""
+    const notes = loadNotes(workspaceId)
+    const ragHints = await loadCustomerRagHints(message, dbPath)
+    const history = getHistory(phone)
+    const businessName = profile.businessName || manifest.agent?.name || "the business"
+    const systemContext = `You are the customer-facing assistant for ${businessName}.
+Answer using the provided business profile, database context, schema, notes, retrieval hints, and recent conversation history.
+If the configured mode is a backend service, keep this request on that backend path.
+Be concise, accurate, and helpful for a WhatsApp customer.`
+    const dynamicContext = [
+        "=== DATABASE CONTEXT ===",
+        dbContext,
+        "",
+        "=== DATABASE SCHEMA ===",
+        schema,
+        notes ? `\n=== DATA MODEL NOTES ===\n${notes}` : "",
+        ragHints ? `\n=== RETRIEVAL HINTS ===\n${ragHints}` : "",
+    ].filter(Boolean).join("\n")
+    const messages = prepareRequest(`Customer message:\n${message}`, "customer", {
+        systemContext,
+        profileFacts: buildProfileFacts(profile),
+        dynamicContext,
+        history,
+    })
+    const response = await complete(messages, { flow: "customer", llmConfig: flowCfg, phone })
+    return response || manifest.agent.error_message || "I'm sorry, I couldn't process that right now."
+}
 
 function isSupportMenuReply(message) {
     const text = String(message || "").trim()
@@ -30,13 +97,6 @@ class AgentChain {
 
     async execute(message, phone) {
         if (!this._ready) throw new Error("AgentChain: call loadAgent() first.")
-
-        // Backward compatibility: manifest-defined backend
-        if (this._manifest.agent?.backend === "openclaw") {
-            const response = await dispatchAgentTask(message, { phone })
-            debugInterceptor.logMessage(phone, message, response, "openclaw", "whatsapp", null)
-            return response
-        }
 
         // 0. Admin intercept
         const admin = parseAdminMessage(message, phone)
@@ -55,6 +115,14 @@ class AgentChain {
         if (!sanity.safe) {
             logger.warn({ phone, reason: sanity.reason }, "chain: sanitizer blocked")
             return "Your message could not be processed."
+        }
+
+        const customerFlowCfg = getFlowConfig("customer")
+        if (customerFlowCfg.backend && customerFlowCfg.backend !== "direct") {
+            const response = await answerCustomerViaConfiguredMode(message, phone, this._manifest)
+            addTurn(phone, message, response, this._manifest.agent?.name || "customer")
+            debugInterceptor.logMessage(phone, message, response, "customer_backend", "whatsapp", null)
+            return response
         }
 
         // 2. Active session check — skip LLM entirely

@@ -184,6 +184,22 @@ Admin notified (via WhatsApp, HTTP callback, or any connected transport) — cus
 - Short replies ("yes", "okay", "cancel it") stay with the agent that last responded
 - Escalation only happens on explicit triggers ("talk to human", "manager")
 
+### Flow Mode Contract
+
+The live system treats the Models page as authoritative for each flow:
+
+- `customer` is always either `LLM` or `Backend Service`
+- `admin` is always either `LLM` or `Backend Service`
+- `agent` is always either `LLM` or `Backend Service`
+
+Context injection is flow-specific:
+
+- `customer` sends workspace profile, DB context, schema, notes, retrieval hints, and recent history
+- `admin` sends workspace profile, DB context, schema, notes, and retrieval hints
+- `agent` sends no business context
+
+There is no hidden mixed-path fallback based on request type. The configured flow mode decides the execution path.
+
 ---
 
 ## Admin Pipeline

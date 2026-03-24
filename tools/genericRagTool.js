@@ -119,6 +119,10 @@ async function execute(filter, context, toolConfig) {
             ? formatted.slice(0, MAX_RAG_CHARS) + "\n\n(data truncated)"
             : formatted
 
+        if (context?.skipLlm) {
+            return trimmed
+        }
+
         const defaultPrompt = `You are a helpful business assistant.
 Answer using ONLY the provided data. Be concise and formatted for WhatsApp.
 Do NOT make up information. If nothing matches, say so clearly.

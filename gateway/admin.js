@@ -17,6 +17,8 @@ const logger = require("./logger")
 function getSettings() { return require("../config/settings.json") }
 function getAdminCfg() { return getSettings().admin }
 function getFlowCfg(flow) { return getSettings().flows?.[flow] || {} }
+const DEFAULT_ADMIN_TOOLS = ["query_db", "shell", "approvals"]
+const DEFAULT_AGENT_TOOLS = ["run_shell", "mac_automation", "query_db", "send_whatsapp", "http_request", "open_browser", "screenshot", "click", "fill", "skill_call"]
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -51,6 +53,96 @@ function getFlowAccessConfig(flow) {
         pin,
         allowedNumbers,
     }
+}
+
+function getAllowedToolsForFlow(flow) {
+    const cfg = getAdminCfg() || {}
+    if (flow === "agent") {
+        const tools = Array.isArray(cfg.agent_tools) ? cfg.agent_tools.filter(Boolean) : []
+        return tools.length ? tools : DEFAULT_AGENT_TOOLS
+    }
+
+    const tools = Array.isArray(cfg.tools) ? cfg.tools.filter(Boolean) : []
+    const hasAdminCapabilities = tools.includes("query_db") || tools.includes("shell") || tools.includes("approvals")
+    return hasAdminCapabilities ? tools : DEFAULT_ADMIN_TOOLS
+}
+
+function getAdminQueryLlmConfig() {
+    const settings = getSettings()
+    const flowAdminLlm = settings.flows?.admin?.llm || {}
+    const baseAdminLlm = settings.admin?.llm || {}
+    const fallbackAgentLlm = settings.admin?.agent_llm || {}
+    return {
+        provider: flowAdminLlm.provider || baseAdminLlm.provider || fallbackAgentLlm.provider || "openai",
+        model: flowAdminLlm.model || baseAdminLlm.model || fallbackAgentLlm.model || "gpt-4o-mini",
+        api_key: flowAdminLlm.api_key || baseAdminLlm.api_key || fallbackAgentLlm.api_key || "",
+        base_url: flowAdminLlm.base_url || baseAdminLlm.base_url || baseAdminLlm.url || fallbackAgentLlm.base_url || fallbackAgentLlm.url || "",
+        backend: settings.flows?.admin?.backend || settings.admin?.backend || "direct",
+    }
+}
+
+function getAdminDirectLlmConfig() {
+    return {
+        ...getAdminQueryLlmConfig(),
+        backend: "direct",
+    }
+}
+
+function buildAdminProfileFacts(profile = {}) {
+    const lines = []
+    for (const [k, v] of Object.entries(profile)) {
+        if (!v || typeof v !== "string") continue
+        if (["openaiKey", "workspaceId", "agentManifest", "domainPack", "scrapeWebsite"].includes(k)) continue
+        lines.push(`- ${k}: ${v}`)
+    }
+    return lines.join("\n") || "No profile data available."
+}
+
+async function loadAdminRagHints(question, workspaceId) {
+    try {
+        const profile = loadProfile(workspaceId)
+        const dbPath = profile.dbPath || getAdminCfg().db_path
+        if (!dbPath) return ""
+        const rag = require("../tools/genericRagTool")
+        const result = await rag.execute({}, { rawMessage: question }, { db_path: dbPath })
+        if (!result || /nothing matched/i.test(result)) return ""
+        return result.split("\n").slice(0, 12).join("\n")
+    } catch {
+        return ""
+    }
+}
+
+async function answerAdminViaConfiguredMode(question, workspaceId) {
+    const profile = loadProfile(workspaceId)
+    const businessName = profile.businessName || getAdminCfg().business_name || "the business"
+    const dbPath = profile.dbPath || getAdminCfg().db_path
+    const flowCfg = getAdminQueryLlmConfig()
+    const relevantTables = await selectRelevantTables(question, workspaceId)
+    const dbContext = await buildDbContext(workspaceId, relevantTables)
+    const schema = getDbSchema(dbPath, relevantTables)
+    const notes = loadNotes(workspaceId)
+    const ragHints = await loadAdminRagHints(question, workspaceId)
+    const profileFacts = buildAdminProfileFacts(profile)
+    const systemContext = `You are an admin assistant for ${businessName}.
+Answer using the provided business profile, database context, schema, notes, and retrieval hints.
+If the configured mode is a backend service, keep this request on that backend path.
+Be concise, accurate, and operationally useful.`
+    const dynamicContext = [
+        "=== DATABASE CONTEXT ===",
+        dbContext,
+        "",
+        "=== DATABASE SCHEMA ===",
+        schema,
+        notes ? `\n=== DATA MODEL NOTES ===\n${notes}` : "",
+        ragHints ? `\n=== RETRIEVAL HINTS ===\n${ragHints}` : "",
+    ].filter(Boolean).join("\n")
+    const prompt = `Admin request:\n${question}`
+    const messages = prepareRequest(prompt, "admin", {
+        systemContext,
+        profileFacts,
+        dynamicContext,
+    })
+    return await complete(messages, { flow: "admin", llmConfig: flowCfg }) || "No response from configured admin service."
 }
 
 function getUserForFlow(phone, flow) {
@@ -207,7 +299,7 @@ async function queryWithLlm(question, dbContext, workspaceId) {
     const mm = String(now.getMonth() + 1).padStart(2, "0")
     const yyyy = now.getFullYear()
 
-    const adminLlmCfg = getSettings().admin?.llm || {}
+    const adminLlmCfg = getAdminDirectLlmConfig()
 
     // Step 1: generate SQL
     const notes = loadNotes(workspaceId)
@@ -225,7 +317,7 @@ Question: ${question}`
 
     let sql
     try {
-        sql = (await complete(sqlPrompt, adminLlmCfg) || "").trim().replace(/^```\w*\n?|\n?```$/g, "").trim()
+        sql = (await complete(sqlPrompt, { flow: "admin", llmConfig: adminLlmCfg }) || "").trim().replace(/^```\w*\n?|\n?```$/g, "").trim()
     } catch {
         return "LLM unavailable for SQL generation. Raw data:\n" + dbContext
     }
@@ -260,7 +352,7 @@ Results (${rows.length} rows): ${JSON.stringify(rows).slice(0, 4000)}
 Provide a clear, concise answer.`
 
     try {
-        const flowCfg = getFlowConfig("admin")
+        const flowCfg = getAdminDirectLlmConfig()
         const messages = prepareRequest(answerPrompt, "admin", { systemContext: `You are an admin assistant for ${businessName}. Be concise.${currencyHint}` })
         return await complete(messages, { flow: "admin", llmConfig: flowCfg }) || `Query returned ${rows.length} rows:\n${JSON.stringify(rows, null, 2)}`
     } catch {
@@ -270,7 +362,7 @@ Provide a clear, concise answer.`
 
 async function summaryFallback(question, dbContext) {
     const businessName = getAdminCfg().business_name || "the business"
-    const adminLlmCfg = getAdminCfg().agent_llm || {}
+    const adminLlmCfg = getAdminDirectLlmConfig()
     const prompt = `You are an admin assistant for ${businessName}.
 Answer the admin's question using ONLY the data provided below. Be concise and use numbers/facts directly.
 Do not make up data. If something is not in the data, say so.
@@ -280,7 +372,7 @@ ${dbContext}
 Admin question: ${question}
 Answer:`
     try {
-        const flowCfg = getFlowConfig("admin")
+        const flowCfg = adminLlmCfg
         const messages = prepareRequest(prompt, "admin", { dynamicContext: dbContext })
         return await complete(messages, { flow: "admin", llmConfig: flowCfg }) || "No response from LLM."
     } catch {
@@ -311,7 +403,7 @@ ${notes ? `\nData model notes:\n${notes}\n` : ""}
 Return ONLY a comma-separated list of table names, no other text.`
 
     try {
-        const flowCfg = getFlowConfig("admin")
+        const flowCfg = getAdminDirectLlmConfig()
         const messages = prepareRequest(prompt, "admin", { dynamicContext: notes ? `Data model notes:\n${notes}\n` : "" })
         const res = await complete(messages, { flow: "admin", llmConfig: flowCfg, max_tokens: 50 })
         if (!res) return allTables
@@ -333,12 +425,11 @@ async function handleAdmin(payload, options = {}) {
     const user = options.user || {}
     const role = user.role || options.role || getAdminCfg()?.role || "super_admin"
     const mode = user.mode || "full"
+    const flowCfg = getFlowConfig(flow)
 
     logger.info({ payload, user: user.name, role, mode, flow }, "admin: handling request")
 
-    const allowedTools = flow === "agent" 
-        ? (getAdminCfg().agent_tools || ["run_shell", "mac_automation", "query_db", "send_whatsapp", "http_request", "open_browser", "screenshot", "click", "fill", "skill_call"])
-        : (getAdminCfg().tools || ["query_db", "shell"])
+    const allowedTools = getAllowedToolsForFlow(flow)
 
     if (flow === "admin" && !allowedTools.includes("approvals") && /^approvals\b/i.test(payload)) {
         // approvals not explicitly in default tools, but let's keep it functional unless blocked
@@ -362,6 +453,10 @@ async function handleAdmin(payload, options = {}) {
         return `✅ Approved ${approval.id} for ${approval.tool}.\nRerun the task and include token ${approval.id} in the request.`
     }
 
+    if (flow !== "agent" && flowCfg.backend && flowCfg.backend !== "direct") {
+        return await answerAdminViaConfiguredMode(payload, workspaceId)
+    }
+
     // Agentic mode — full OpenAI function-calling loop
     if (flow === "agent" || /^agent\s+/i.test(payload) || (flow === "admin" && getAdminCfg()?.default_to_agent)) {
         if (mode === "query_only" || mode === "shell_only") {
@@ -374,7 +469,7 @@ async function handleAdmin(payload, options = {}) {
             const task = payload.replace(/^agent\s+/i, "").trim()
             logger.info({ task, user: user.name, isExplicitAgent }, "admin: agentic mode")
             // Only set noContext: true if it's an explicit "agent" command
-            return await dispatchAgentTask(task, { workspaceId, role, noContext: isExplicitAgent, flow })
+            return await dispatchAgentTask(task, { workspaceId, role, noContext: isExplicitAgent, flow, backend: flowCfg.backend })
         }
     }
 
@@ -382,7 +477,7 @@ async function handleAdmin(payload, options = {}) {
     if (/\b(add|record|insert|update|change|set|delete|remove|mark)\b/i.test(payload)) {
         if (mode === "query_only" || mode === "shell_only") return `⛔ Your access level (${mode}) does not allow mutations.`
         logger.info({ payload, user: user.name }, "admin: mutation detected, routing to agent")
-        return await dispatchAgentTask(payload, { workspaceId, role, flow })
+        return await dispatchAgentTask(payload, { workspaceId, role, flow, backend: flowCfg.backend })
     }
 
     if (looksLikeShell(payload)) {

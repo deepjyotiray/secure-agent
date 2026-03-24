@@ -249,48 +249,29 @@ To add more admin users later, use the Setup UI at `http://localhost:3010/tools`
 
 ### How Customer Messages Actually Work
 
-For a layman, the easiest way to think about the customer flow is:
+The easiest way to think about the flow system is:
 
-`message` → `intent router` → `tool`
+Every flow has a mode in Models:
 
-The system does **not** send every customer message to the LLM.
+- `Customer Flow` = `LLM` or `Backend Service`
+- `Admin Flow` = `LLM` or `Backend Service`
+- `Agent Flow` = `LLM` or `Backend Service`
 
-Instead:
+That mode is the rule for how the request runs.
 
-1. The router tries fast heuristics first.
-   Examples:
-   - `hi` → greeting
-   - `my open orders` → order lookup
-   - `i need help` → support
+- If `Customer Flow` is `LLM`, customer messages use the normal router and tools.
+- If `Customer Flow` is `Backend Service`, the full customer request goes to the backend with workspace context.
+- If `Admin Flow` is `Backend Service`, the full admin request goes to the backend with workspace context.
+- If `Agent Flow` is `Backend Service`, the full agent request goes to the backend with no business context.
 
-2. If heuristics are not enough, the intent parser LLM chooses the intent.
-
-3. The selected tool decides how to answer:
-   - **Direct DB / session tools**: `order_lookup`, `order_create`
-   - **Grounded retrieval tools**: `rag_menu`, `policy_rag`
-   - **LLM-backed tools**: `concierge`, support-info answers
+The app no longer relies on hidden mixed-path routing for these flows.
 
 Examples:
 
-- `My open orders`
-  → `order_lookup`
-  → direct database lookup
-  → no LLM needed
-
-- `High protein dishes`
-  → `rag_menu`
-  → grounded menu retrieval
-  → returns from menu data
-
-- `Open hours`
-  → `concierge`
-  → tries the configured customer backend first
-  → if that backend returns nothing, falls back to the saved business profile
-
-- `What is your support email`
-  → support intent
-  → first checks for profile-backed support info
-  → only opens the complaint menu for actual complaint-style issues
+- `My open orders` → `order_lookup` → direct database lookup → no LLM needed
+- `High protein dishes` → `rag_menu` → grounded menu retrieval → returns from menu data
+- `Open hours` → `concierge` → tries the configured customer backend first → if that backend returns nothing, falls back to the saved business profile
+- `What is your support email` → support intent → checks profile-backed support info first → only opens the complaint menu for actual complaint-style issues
 
 ### Order placement flow (WhatsApp)
 

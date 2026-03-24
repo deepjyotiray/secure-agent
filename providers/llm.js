@@ -46,9 +46,12 @@ function getFlowConfig(flowName = "customer") {
  */
 async function complete(input, options = {}) {
     const flowName = options.flow || "customer"
-    const cfg = options.llmConfig || getFlowConfig(flowName)
-    
-    const providerKey = cfg.provider || "openai"
+    const cfg = {
+        ...getFlowConfig(flowName),
+        ...(options.llmConfig || {}),
+    }
+
+    const providerKey = (cfg.backend && cfg.backend !== "direct") ? "backend" : (cfg.provider || "openai")
     const AdapterClass = ADAPTERS[providerKey] || ADAPTERS.openai
     
     const adapter = new AdapterClass(cfg)

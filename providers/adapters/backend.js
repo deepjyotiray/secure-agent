@@ -13,7 +13,8 @@ class BackendAdapter extends BaseAdapter {
         
         // Use dispatchAgentTask which is already plumbed for OpenClaw/Backend systems
         const { dispatchAgentTask } = require("../../gateway/adminAgent")
-        const response = await dispatchAgentTask(prompt, { 
+        const response = await dispatchAgentTask(prompt, {
+            ...options,
             phone: options.phone,
             backend: this.config.backend || this.config.backend_type || 'openclaw',
             endpoint: this.config.endpoint || this.config.base_url,
