@@ -101,14 +101,15 @@ async function execute(filter, context, toolConfig) {
     const { db_path, system_prompt } = toolConfig
     if (!db_path) return "Database not configured."
 
-    const query = context.rawMessage || ""
+    const query = context.resolvedRequest?.effectiveMessage || context.rawMessage || ""
+    const effectiveFilter = context.resolvedRequest?.appliedFilters || filter
 
     const db = getDb(db_path)
     try {
         const tables = discoverSearchableTables(db)
         if (!tables.length) return "No searchable data found."
 
-        const { rows } = keywordSearch(db, tables, query, filter)
+        const { rows } = keywordSearch(db, tables, query, effectiveFilter)
 
         if (!rows.length) return "Sorry, nothing matched your query."
 

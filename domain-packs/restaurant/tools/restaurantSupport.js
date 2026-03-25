@@ -125,7 +125,8 @@ ${text}
 }
 
 async function execute(_params, context, toolConfig) {
-    const { phone, rawMessage: msg } = context
+    const phone = context.phone
+    const msg = context.resolvedRequest?.effectiveMessage || context.rawMessage
     const { db_path, escalation_phone } = toolConfig
     const adminPhone = escalation_phone || settings.admin?.number || ""
     const text = (msg || "").trim()

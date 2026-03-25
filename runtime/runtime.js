@@ -48,8 +48,8 @@ class Runtime {
 
         // 0. Admin intercept — bypasses all gates, only for registered admin number
         if (isAdmin(phone)) {
-            const admin = parseAdminMessage(message)
-            if (admin.isAdmin) return await handleAdmin(admin.payload)
+            const admin = parseAdminMessage(message, phone)
+            if (admin.isAdmin) return await handleAdmin(admin.payload, { user: admin.user, flow: admin.flow, phone })
         }
 
         // 1. Sanitizer

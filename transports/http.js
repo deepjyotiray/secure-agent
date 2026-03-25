@@ -663,7 +663,7 @@ const server = http.createServer(async (req, res) => {
             }
             const payload = mode === "query" ? task : `agent ${task}`
             const resolvedWorkspace = workspaceId || getActiveWorkspace()
-            const response = await handleAdmin(payload, { workspaceId: resolvedWorkspace, role })
+            const response = await handleAdmin(payload, { workspaceId: resolvedWorkspace, role, phone: `http-admin:${resolvedWorkspace}:${role || "super_admin"}` })
             sendJson(res, 200, { ok: true, response, mode: mode || "agent", workspaceId: resolvedWorkspace })
         } catch (err) {
             logger.error({ err }, "setup admin run failed")

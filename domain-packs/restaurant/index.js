@@ -13,6 +13,56 @@ module.exports = {
     version: "1.0.0",
     description: "Restaurant / food-delivery domain pack",
 
+    resolveFollowUp({ flow, message, conversationState }) {
+        if (flow !== "customer") return null
+        const text = String(message || "").trim().toLowerCase()
+        const topic = conversationState?.topic?.label
+        if (!topic) return null
+
+        if (/^(add one|add 1|book one)$/i.test(text)) {
+            return {
+                message: `add one ${topic}`,
+                reason: "restaurant_add_from_active_topic",
+                confidence: 0.74,
+            }
+        }
+
+        return null
+    },
+
+    extractConversationState({ flow, message, resolvedMessage, intent, filters, conversationState }) {
+        const query = typeof filters?.query === "string" && filters.query.trim()
+            ? filters.query.trim()
+            : null
+
+        if (flow === "customer") {
+            if (intent === "show_menu") {
+                return {
+                    task: "browse_catalog",
+                    route: "customer_menu",
+                    topic: query
+                        ? { label: query, source: "filter", confidence: 0.88 }
+                        : conversationState?.topic || null,
+                }
+            }
+
+            if (intent === "place_order") {
+                return {
+                    task: "place_order",
+                    route: "customer_order",
+                }
+            }
+        }
+
+        if (flow === "admin") {
+            return {
+                route: "admin",
+            }
+        }
+
+        return null
+    },
+
     // tool type name → handler module (each exports execute())
     toolTypes: {
         menu_rag:           menuRag,

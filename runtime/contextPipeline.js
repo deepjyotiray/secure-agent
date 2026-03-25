@@ -39,6 +39,18 @@ function buildContext(flow, context) {
         lines.push("")
     }
 
+    if (context.conversationState && typeof context.conversationState === "object") {
+        lines.push("=== CONVERSATION STATE ===")
+        lines.push(JSON.stringify(context.conversationState, null, 2))
+        lines.push("")
+    }
+
+    if (context.resolvedRequest && typeof context.resolvedRequest === "object") {
+        lines.push("=== RESOLVED REQUEST ===")
+        lines.push(JSON.stringify(context.resolvedRequest, null, 2))
+        lines.push("")
+    }
+
     return lines.join("\n")
 }
 

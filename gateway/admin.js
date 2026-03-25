@@ -11,7 +11,12 @@ const { getActiveWorkspace } = require("../core/workspace")
 const { loadProfile } = require("../setup/profileService")
 const { loadNotes } = require("../core/dataModelNotes")
 const { registerGuide } = require("../core/promptGuides")
-const { getPackForWorkspace } = require("../core/domainPacks")
+const { getPackForWorkspace, extractPackConversationState } = require("../core/domainPacks")
+const flowMemory = require("../runtime/flowMemory")
+const conversationState = require("../runtime/conversationState")
+const { resolveFollowUp } = require("../runtime/followUpResolver")
+const { buildResolvedRequest } = require("../runtime/resolvedRequest")
+const { decideAdminExecution } = require("../runtime/flowOrchestrator")
 const logger = require("./logger")
 
 function getSettings() { return require("../config/settings.json") }
@@ -112,7 +117,8 @@ async function loadAdminRagHints(question, workspaceId) {
     }
 }
 
-async function answerAdminViaConfiguredMode(question, workspaceId) {
+async function answerAdminViaConfiguredMode(resolvedRequest, workspaceId, conversationId = workspaceId) {
+    const question = resolvedRequest.effectiveMessage || resolvedRequest.originalMessage || ""
     const profile = loadProfile(workspaceId)
     const businessName = profile.businessName || getAdminCfg().business_name || "the business"
     const dbPath = profile.dbPath || getAdminCfg().db_path
@@ -137,12 +143,41 @@ Be concise, accurate, and operationally useful.`
         ragHints ? `\n=== RETRIEVAL HINTS ===\n${ragHints}` : "",
     ].filter(Boolean).join("\n")
     const prompt = `Admin request:\n${question}`
+    const history = flowMemory.getHistory("admin", conversationId)
     const messages = prepareRequest(prompt, "admin", {
         systemContext,
         profileFacts,
         dynamicContext,
+        history,
+        conversationState: conversationState.getState("admin", conversationId),
+        resolvedRequest,
     })
     return await complete(messages, { flow: "admin", llmConfig: flowCfg }) || "No response from configured admin service."
+}
+
+async function finalizeAdminResponse(payload, options, work) {
+    const response = await work()
+    const flow = options.flow || "admin"
+    const conversationId = options.phone || options.workspaceId || getActiveWorkspace()
+    if (flow === "admin" && payload && response) {
+        const profile = loadProfile(options.workspaceId || getActiveWorkspace())
+        const pack = getPackForWorkspace(profile)
+        const packState = extractPackConversationState(pack, {
+            flow: "admin",
+            message: payload,
+            response,
+            conversationState: conversationState.getState("admin", conversationId),
+        }) || {}
+        flowMemory.addTurn("admin", conversationId, payload, response, options.user?.name || options.role || "admin")
+        conversationState.recordInteraction("admin", conversationId, {
+            message: payload,
+            response,
+            route: flow,
+            task: "admin_request",
+            ...packState,
+        })
+    }
+    return response
 }
 
 function getUserForFlow(phone, flow) {
@@ -290,7 +325,8 @@ function getDbSchema(dbPath, relevantTables = null) {
     } finally { db.close() }
 }
 
-async function queryWithLlm(question, dbContext, workspaceId) {
+async function queryWithLlm(resolvedRequest, dbContext, workspaceId, conversationId = workspaceId) {
+    const question = resolvedRequest.effectiveMessage || resolvedRequest.originalMessage || ""
     const businessName = getAdminCfg().business_name || "the business"
     const dbPath = loadProfile(workspaceId).dbPath || getAdminCfg().db_path
     const schema = getDbSchema(dbPath)
@@ -324,7 +360,7 @@ Question: ${question}`
 
     if (!sql || !/^SELECT\b/i.test(sql)) {
         // Fallback to summary-based answer
-        return await summaryFallback(question, dbContext)
+        return await summaryFallback(resolvedRequest, dbContext, conversationId)
     }
 
     logger.info({ sql }, "admin query: generated SQL")
@@ -336,7 +372,7 @@ Question: ${question}`
         rows = db.prepare(sql).all()
     } catch (err) {
         logger.warn({ err, sql }, "admin query: SQL execution failed, falling back")
-        return await summaryFallback(question, dbContext)
+        return await summaryFallback(resolvedRequest, dbContext, conversationId)
     } finally { db.close() }
 
     // Step 3: summarise results
@@ -353,14 +389,20 @@ Provide a clear, concise answer.`
 
     try {
         const flowCfg = getAdminDirectLlmConfig()
-        const messages = prepareRequest(answerPrompt, "admin", { systemContext: `You are an admin assistant for ${businessName}. Be concise.${currencyHint}` })
+        const messages = prepareRequest(answerPrompt, "admin", {
+            systemContext: `You are an admin assistant for ${businessName}. Be concise.${currencyHint}`,
+            conversationState: conversationState.getState("admin", conversationId),
+            history: flowMemory.getHistory("admin", conversationId),
+            resolvedRequest,
+        })
         return await complete(messages, { flow: "admin", llmConfig: flowCfg }) || `Query returned ${rows.length} rows:\n${JSON.stringify(rows, null, 2)}`
     } catch {
         return `Query returned ${rows.length} rows:\n${JSON.stringify(rows, null, 2)}`
     }
 }
 
-async function summaryFallback(question, dbContext) {
+async function summaryFallback(resolvedRequest, dbContext, conversationId = getActiveWorkspace()) {
+    const question = resolvedRequest.effectiveMessage || resolvedRequest.originalMessage || ""
     const businessName = getAdminCfg().business_name || "the business"
     const adminLlmCfg = getAdminDirectLlmConfig()
     const prompt = `You are an admin assistant for ${businessName}.
@@ -373,7 +415,12 @@ Admin question: ${question}
 Answer:`
     try {
         const flowCfg = adminLlmCfg
-        const messages = prepareRequest(prompt, "admin", { dynamicContext: dbContext })
+        const messages = prepareRequest(prompt, "admin", {
+            dynamicContext: dbContext,
+            conversationState: conversationState.getState("admin", conversationId),
+            history: flowMemory.getHistory("admin", conversationId),
+            resolvedRequest,
+        })
         return await complete(messages, { flow: "admin", llmConfig: flowCfg }) || "No response from LLM."
     } catch {
         return "LLM unavailable. Raw data:\n" + dbContext
@@ -437,24 +484,45 @@ async function handleAdmin(payload, options = {}) {
 
     if (/^approvals\b/i.test(payload)) {
         if (flow === "admin" && !allowedTools.includes("query_db")) return "⛔ Your tool allowlist does not include query/approval access."
-        const approvals = listApprovals("pending", workspaceId)
-        if (!approvals.length) return "No pending approvals."
-        return approvals.slice(0, 10).map(a =>
-            `• ${a.id} | workspace: ${a.workspaceId} | tool: ${a.tool} | worker: ${a.worker} | created: ${a.createdAt}\n  task: ${a.task}`
-        ).join("\n\n")
+        return await finalizeAdminResponse(payload, { ...options, workspaceId, user, role }, async () => {
+            const approvals = listApprovals("pending", workspaceId)
+            if (!approvals.length) return "No pending approvals."
+            return approvals.slice(0, 10).map(a =>
+                `• ${a.id} | workspace: ${a.workspaceId} | tool: ${a.tool} | worker: ${a.worker} | created: ${a.createdAt}\n  task: ${a.task}`
+            ).join("\n\n")
+        })
     }
 
     if (/^approve\s+/i.test(payload)) {
         if (mode === "query_only") return "⛔ Your access level does not allow approvals."
         if (flow === "admin" && !allowedTools.includes("query_db")) return "⛔ Your tool allowlist does not include approval access."
-        const id = payload.replace(/^approve\s+/i, "").trim()
-        const approval = approveRequest(id, workspaceId)
-        if (!approval) return `Approval ${id} not found.`
-        return `✅ Approved ${approval.id} for ${approval.tool}.\nRerun the task and include token ${approval.id} in the request.`
+        return await finalizeAdminResponse(payload, { ...options, workspaceId, user, role }, async () => {
+            const id = payload.replace(/^approve\s+/i, "").trim()
+            const approval = approveRequest(id, workspaceId)
+            if (!approval) return `Approval ${id} not found.`
+            return `✅ Approved ${approval.id} for ${approval.tool}.\nRerun the task and include token ${approval.id} in the request.`
+        })
     }
 
-    if (flow !== "agent" && flowCfg.backend && flowCfg.backend !== "direct") {
-        return await answerAdminViaConfiguredMode(payload, workspaceId)
+    const adminState = flow === "admin" ? conversationState.getState("admin", options.phone || workspaceId) : null
+    const resolvedAdmin = flow === "admin"
+        ? resolveFollowUp({ flow: "admin", message: payload, conversationState: adminState })
+        : { message: payload, resolved: false }
+    const effectivePayload = resolvedAdmin.message || payload
+    const resolvedRequest = buildResolvedRequest({
+        flow: "admin",
+        originalMessage: payload,
+        effectiveMessage: effectivePayload,
+        conversationState: adminState,
+        resolution: resolvedAdmin,
+    })
+
+    const adminExecution = decideAdminExecution({ flow, flowConfig: flowCfg, payload })
+
+    if (adminExecution.mode === "backend") {
+        return await finalizeAdminResponse(payload, { ...options, workspaceId, user, role }, async () =>
+            await answerAdminViaConfiguredMode(resolvedRequest, workspaceId, options.phone || workspaceId)
+        )
     }
 
     // Agentic mode — full OpenAI function-calling loop
@@ -469,7 +537,9 @@ async function handleAdmin(payload, options = {}) {
             const task = payload.replace(/^agent\s+/i, "").trim()
             logger.info({ task, user: user.name, isExplicitAgent }, "admin: agentic mode")
             // Only set noContext: true if it's an explicit "agent" command
-            return await dispatchAgentTask(task, { workspaceId, role, noContext: isExplicitAgent, flow, backend: flowCfg.backend })
+            return await finalizeAdminResponse(payload, { ...options, workspaceId, user, role }, async () =>
+                await dispatchAgentTask(task, { workspaceId, role, noContext: isExplicitAgent, flow, backend: flowCfg.backend })
+            )
         }
     }
 
@@ -477,23 +547,29 @@ async function handleAdmin(payload, options = {}) {
     if (/\b(add|record|insert|update|change|set|delete|remove|mark)\b/i.test(payload)) {
         if (mode === "query_only" || mode === "shell_only") return `⛔ Your access level (${mode}) does not allow mutations.`
         logger.info({ payload, user: user.name }, "admin: mutation detected, routing to agent")
-        return await dispatchAgentTask(payload, { workspaceId, role, flow, backend: flowCfg.backend })
+        return await finalizeAdminResponse(payload, { ...options, workspaceId, user, role }, async () =>
+            await dispatchAgentTask(payload, { workspaceId, role, flow, backend: flowCfg.backend })
+        )
     }
 
     if (looksLikeShell(payload)) {
         if (mode === "query_only" || mode === "agent_only") return `⛔ Your access level (${mode}) does not allow shell commands.`
         if (flow === "admin" && !allowedTools.includes("shell")) return "⛔ Your tool allowlist does not include shell commands."
-        const result = await runShell(payload)
-        return `\`\`\`\n${result}\n\`\`\``
+        return await finalizeAdminResponse(payload, { ...options, workspaceId, user, role }, async () => {
+            const result = await runShell(payload)
+            return `\`\`\`\n${result}\n\`\`\``
+        })
     }
 
     // Natural language — governance check then dynamic SQL via LLM
     if (flow === "admin" && !allowedTools.includes("query_db")) return "⛔ Your tool allowlist does not include database queries."
-    const auth = authorizeToolCall({ role, worker: "operator", tool: "query_db", task: payload, workspaceId })
+    const auth = authorizeToolCall({ role, worker: "operator", tool: "query_db", task: effectivePayload, workspaceId })
     if (!auth.allowed) return `⛔ ${auth.reason}${auth.approvalHint ? "\n" + auth.approvalHint : ""}`
 
-    const dbContext = buildDbContext(workspaceId)
-    return await queryWithLlm(payload, dbContext, workspaceId)
+    return await finalizeAdminResponse(payload, { ...options, workspaceId, user, role }, async () => {
+        const dbContext = buildDbContext(workspaceId)
+        return await queryWithLlm(resolvedRequest, dbContext, workspaceId, options.phone || workspaceId)
+    })
 }
 
 async function handleAdminImage(imageBase64, caption, options = {}) {

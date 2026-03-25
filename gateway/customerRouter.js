@@ -69,20 +69,33 @@ function resolveFilterConfig(manifest) {
     }
 }
 
-async function routeCustomerMessage(message, manifest) {
+function mergeResolvedFilters(baseFilter, resolvedRequest, filterFields) {
+    const out = { ...(baseFilter || {}) }
+    const applied = resolvedRequest?.appliedFilters
+    if (!applied || typeof applied !== "object") return normalizeFilter(out, filterFields)
+    for (const key of Object.keys(applied)) {
+        if (applied[key] === undefined) continue
+        out[key] = applied[key]
+    }
+    return normalizeFilter(out, filterFields)
+}
+
+async function routeCustomerMessage(message, manifest, options = {}) {
     const configuredIntents = Object.keys(manifest.intents || {})
     const domainHeuristics = resolveHeuristics(manifest)
     const domainIntentMap = manifest._domainPackHeuristicIntentMap || null
     const filterConfig = resolveFilterConfig(manifest)
-    const heuristic = heuristicIntent(message, domainHeuristics, domainIntentMap)
+    const resolvedRequest = options.resolvedRequest || null
+    const routingMessage = resolvedRequest?.effectiveMessage || message
+    const heuristic = heuristicIntent(routingMessage, domainHeuristics, domainIntentMap)
 
     // Optimization: If heuristic finds a strong match (like 'greet' or 'support'), 
     // and it's in our manifest, skip the LLM call for intent parsing.
     if (heuristic.intent && heuristic.intent !== "general_chat" && configuredIntents.includes(heuristic.intent)) {
-        return { intent: heuristic.intent, filter: normalizeFilter(heuristic.filter, filterConfig.fields) }
+        return { intent: heuristic.intent, filter: mergeResolvedFilters(heuristic.filter, resolvedRequest, filterConfig.fields) }
     }
 
-    const parsed = await parseIntent(message, {
+    const parsed = await parseIntent(routingMessage, {
         allowedIntents: configuredIntents,
         intentHints: manifest.intent_hints || {},
         businessProfile: manifest.agent?.description || manifest.agent?.name || "business assistant",
@@ -93,10 +106,10 @@ async function routeCustomerMessage(message, manifest) {
     })
 
     if (!parsed?.intent || !configuredIntents.includes(parsed.intent)) {
-        return { intent: heuristic.intent, filter: normalizeFilter(heuristic.filter, filterConfig.fields) }
+        return { intent: heuristic.intent, filter: mergeResolvedFilters(heuristic.filter, resolvedRequest, filterConfig.fields) }
     }
 
-    return { intent: parsed.intent, filter: normalizeFilter(parsed.filter, filterConfig.fields) }
+    return { intent: parsed.intent, filter: mergeResolvedFilters(parsed.filter, resolvedRequest, filterConfig.fields) }
 }
 
 module.exports = { routeCustomerMessage, heuristicIntent, normalizeFilter }

@@ -13,14 +13,20 @@ const cartStore                          = require("../tools/cartStore")
 const executor                           = require("./executor")
 const logger                             = require("../gateway/logger")
 const { addTurn, getHistory }            = require("./sessionMemory")
+const flowMemory                         = require("./flowMemory")
+const conversationState                  = require("./conversationState")
 const { getActiveWorkspace }             = require("../core/workspace")
 const { loadPack, getPackForWorkspace }  = require("../core/domainPacks")
 const debugInterceptor                   = require("./debugInterceptor")
 const { getFlowConfig, complete }        = require("../providers/llm")
 const { prepareRequest }                 = require("./contextPipeline")
+const { resolveFollowUp }                = require("./followUpResolver")
+const { buildResolvedRequest }           = require("./resolvedRequest")
+const { decideCustomerExecution }        = require("./flowOrchestrator")
 const { loadProfile }                    = require("../setup/profileService")
 const { loadNotes }                      = require("../core/dataModelNotes")
 const { buildDbContext, getDbSchema, selectRelevantTables } = require("../gateway/admin")
+const { extractPackConversationState }   = require("../core/domainPacks")
 
 function buildProfileFacts(profile = {}) {
     const lines = []
@@ -49,7 +55,8 @@ async function loadCustomerRagHints(message, dbPath) {
     }
 }
 
-async function answerCustomerViaConfiguredMode(message, phone, manifest) {
+async function answerCustomerViaConfiguredMode(resolvedRequest, phone, manifest) {
+    const message = resolvedRequest.effectiveMessage || resolvedRequest.originalMessage || ""
     const workspaceId = getActiveWorkspace()
     const flowCfg = getFlowConfig("customer")
     const profile = loadProfile(workspaceId)
@@ -59,7 +66,7 @@ async function answerCustomerViaConfiguredMode(message, phone, manifest) {
     const schema = dbPath ? getDbSchema(dbPath, relevantTables) : ""
     const notes = loadNotes(workspaceId)
     const ragHints = await loadCustomerRagHints(message, dbPath)
-    const history = getHistory(phone)
+    const history = flowMemory.getHistory("customer", phone)
     const businessName = profile.businessName || manifest.agent?.name || "the business"
     const systemContext = `You are the customer-facing assistant for ${businessName}.
 Answer using the provided business profile, database context, schema, notes, retrieval hints, and recent conversation history.
@@ -79,6 +86,8 @@ Be concise, accurate, and helpful for a WhatsApp customer.`
         profileFacts: buildProfileFacts(profile),
         dynamicContext,
         history,
+        conversationState: conversationState.getState("customer", phone),
+        resolvedRequest,
     })
     const response = await complete(messages, { flow: "customer", llmConfig: flowCfg, phone })
     return response || manifest.agent.error_message || "I'm sorry, I couldn't process that right now."
@@ -95,13 +104,45 @@ class AgentChain {
         this._ready    = false
     }
 
+    async _executeAndStore(intent, context, originalMessage, phone) {
+        context.conversationState = context.conversationState || conversationState.getState("customer", phone)
+        const response = await executor.execute(this._manifest, intent, context)
+        if (response) {
+            const packState = extractPackConversationState(this._domainPack, {
+                flow: "customer",
+                message: originalMessage,
+                resolvedMessage: context.rawMessage,
+                response,
+                intent: intent.intent,
+                filters: intent.filter || {},
+                conversationState: context.conversationState,
+            }) || {}
+            addTurn(phone, originalMessage, response, this._manifest.agent?.name || "customer")
+            flowMemory.addTurn("customer", phone, originalMessage, response, this._manifest.agent?.name || "customer")
+            conversationState.recordInteraction("customer", phone, {
+                message: originalMessage,
+                response,
+                intent: intent.intent,
+                filters: context.resolvedRequest?.appliedFilters || intent.filter || {},
+                route: context.flow || "customer",
+                task: intent.intent,
+                topic: context.resolvedRequest?.wasRewritten ? context.resolvedRequest.activeTopic : undefined,
+                slots: context.resolvedMeta?.resolved
+                    ? { resolvedMessage: context.rawMessage, resolutionReason: context.resolvedMeta.reason }
+                    : undefined,
+                ...packState,
+            })
+        }
+        return response
+    }
+
     async execute(message, phone) {
         if (!this._ready) throw new Error("AgentChain: call loadAgent() first.")
 
         // 0. Admin intercept
         const admin = parseAdminMessage(message, phone)
         if (admin.isAdmin) {
-            const response = await handleAdmin(admin.payload, { user: admin.user, flow: admin.flow })
+            const response = await handleAdmin(admin.payload, { user: admin.user, flow: admin.flow, phone })
             debugInterceptor.logMessage(phone, message, response, "admin", "whatsapp", null)
             return response
         }
@@ -117,13 +158,26 @@ class AgentChain {
             return "Your message could not be processed."
         }
 
-        const customerFlowCfg = getFlowConfig("customer")
-        if (customerFlowCfg.backend && customerFlowCfg.backend !== "direct") {
-            const response = await answerCustomerViaConfiguredMode(message, phone, this._manifest)
-            addTurn(phone, message, response, this._manifest.agent?.name || "customer")
-            debugInterceptor.logMessage(phone, message, response, "customer_backend", "whatsapp", null)
-            return response
+        const currentConversationState = conversationState.getState("customer", phone)
+        const resolved = resolveFollowUp({
+            flow: "customer",
+            message,
+            conversationState: currentConversationState,
+            domainPack: this._domainPack,
+        })
+        const effectiveMessage = resolved.message || message
+        const resolvedRequest = buildResolvedRequest({
+            flow: "customer",
+            originalMessage: message,
+            effectiveMessage,
+            conversationState: currentConversationState,
+            resolution: resolved,
+        })
+        if (resolved.resolved) {
+            logger.info({ phone, originalMessage: message, effectiveMessage, reason: resolved.reason, confidence: resolved.confidence }, "chain: follow-up resolved")
         }
+
+        const customerFlowCfg = getFlowConfig("customer")
 
         // 2. Active session check — skip LLM entirely
         const activeSession = cartStore.get(phone)
@@ -132,51 +186,88 @@ class AgentChain {
         if (activeSession && activeSession.state === "support_handoff") {
             // active session handed off to support — clear session, route to support
             cartStore.clear(phone)
-            return await executor.execute(this._manifest, { intent: "support", filter: {} }, { phone, rawMessage: message })
+            return await this._executeAndStore({ intent: "support", filter: {} }, { phone, rawMessage: effectiveMessage, resolvedMeta: resolved, resolvedRequest }, message, phone)
         }
 
         if (activeSession) {
             const cartIntent = this._sessionRouting.activeCartIntent || Object.keys(this._manifest.intents)[0] || "general_chat"
-            return await executor.execute(this._manifest, { intent: cartIntent, filter: {} }, { phone, rawMessage: message })
+            return await this._executeAndStore({ intent: cartIntent, filter: {} }, { phone, rawMessage: effectiveMessage, resolvedMeta: resolved, resolvedRequest }, message, phone)
         }
 
         if (activeSupport) {
             if (activeSupport.state === "menu" && !isSupportMenuReply(message)) {
                 try {
-                    const reroute = await routeCustomerMessage(message, this._manifest)
+                    const reroute = await routeCustomerMessage(effectiveMessage, this._manifest, { resolvedRequest })
                     if (reroute.intent && reroute.intent !== "support") {
                         cartStore.clear(`support:${phone}`)
                     } else {
-                        return await executor.execute(this._manifest, { intent: "support", filter: {} }, { phone, rawMessage: message })
+                        return await this._executeAndStore({ intent: "support", filter: {} }, { phone, rawMessage: effectiveMessage, resolvedMeta: resolved, resolvedRequest }, message, phone)
                     }
                 } catch {
                     cartStore.clear(`support:${phone}`)
                 }
             } else {
-                return await executor.execute(this._manifest, { intent: "support", filter: {} }, { phone, rawMessage: message })
+                return await this._executeAndStore({ intent: "support", filter: {} }, { phone, rawMessage: effectiveMessage, resolvedMeta: resolved, resolvedRequest }, message, phone)
             }
         }
 
-        // 3. Intent router — manifest-driven business classification
-        let intent, filter
+        let routedIntent = null
         try {
-            // Check if intent was already parsed by previewEngine in this process
             const { getCachedIntent } = require("./previewEngine")
             const cached = getCachedIntent(phone, message)
             if (cached) {
-                intent = cached.intent
-                filter = cached.filter || {}
-                logger.info({ phone, intent, source: "cache" }, "chain: intent parsed (cached)")
+                routedIntent = { intent: cached.intent, filter: cached.filter || {} }
+                logger.info({ phone, intent: routedIntent.intent, source: "cache" }, "chain: intent parsed (cached)")
             } else {
-                const result = await routeCustomerMessage(message, this._manifest)
-                intent = result.intent
-                filter = result.filter || {}
-                logger.info({ phone, intent }, "chain: intent parsed")
+                routedIntent = await routeCustomerMessage(effectiveMessage, this._manifest, { resolvedRequest })
+                logger.info({ phone, intent: routedIntent.intent }, "chain: intent parsed")
             }
         } catch {
-            intent = "general_chat"
-            filter = {}
+            routedIntent = { intent: "general_chat", filter: {} }
         }
+
+        const executionPlan = decideCustomerExecution({
+            flowConfig: customerFlowCfg,
+            routedIntent,
+            manifest: this._manifest,
+        })
+        logger.info({ phone, mode: executionPlan.mode, reason: executionPlan.reason, intent: executionPlan.intent }, "chain: customer flow orchestrated")
+
+        if (executionPlan.mode === "backend") {
+            resolvedRequest.lastIntent = routedIntent.intent
+            resolvedRequest.appliedFilters = routedIntent.filter || resolvedRequest.appliedFilters
+            const response = await answerCustomerViaConfiguredMode(resolvedRequest, phone, this._manifest)
+            const packState = extractPackConversationState(this._domainPack, {
+                flow: "customer",
+                message,
+                resolvedMessage: effectiveMessage,
+                response,
+                intent: routedIntent.intent || currentConversationState.lastIntent || "general_chat",
+                filters: routedIntent.filter || currentConversationState.filters || {},
+                conversationState: currentConversationState,
+            }) || {}
+            addTurn(phone, message, response, this._manifest.agent?.name || "customer")
+            flowMemory.addTurn("customer", phone, message, response, this._manifest.agent?.name || "customer")
+            conversationState.recordInteraction("customer", phone, {
+                message,
+                response,
+                intent: routedIntent.intent,
+                route: "customer_backend",
+                task: "customer_backend",
+                topic: resolvedRequest.wasRewritten ? resolvedRequest.activeTopic : undefined,
+                filters: resolvedRequest.appliedFilters,
+                slots: resolved.resolved
+                    ? { resolvedMessage: effectiveMessage, resolutionReason: resolved.reason }
+                    : undefined,
+                ...packState,
+            })
+            debugInterceptor.logMessage(phone, message, response, "customer_backend", "whatsapp", null)
+            return response
+        }
+
+        // 3. Intent router — manifest-driven business classification
+        let intent = routedIntent.intent
+        let filter = routedIntent.filter || {}
 
         // 4. Guard — fallback to public concierge if route is unknown
         if (!this._manifest.intents[intent]) {
@@ -185,7 +276,9 @@ class AgentChain {
 
         // 5. Execute
         try {
-            const response = await executor.execute(this._manifest, { intent, filter }, { phone, rawMessage: message })
+            resolvedRequest.lastIntent = intent
+            resolvedRequest.appliedFilters = filter || resolvedRequest.appliedFilters
+            const response = await this._executeAndStore({ intent, filter }, { phone, rawMessage: effectiveMessage, resolvedMeta: resolved, resolvedRequest }, message, phone)
             if (response) {
                 return response
             }

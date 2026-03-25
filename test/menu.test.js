@@ -315,6 +315,13 @@ async function main() {
         ["no main course",                          !r.includes("Chicken Masala")],
     ])
 
+    r = await run("dessert", { query: "dessert" })
+    assert("natural: dessert maps to sweet dishes, not unrelated menu", r, [
+        ["has Kheer",                               r.includes("Kheer")],
+        ["has Sheera",                              r.includes("Sheera")],
+        ["no healthy salads fallback",              !r.includes("Brown Rice, Broccoli")],
+    ])
+
     r = await run("I want egg", { query: "egg" })
     assert("natural: I want egg", r, [
         ["has Egg Curry",                           r.includes("Egg Curry")],

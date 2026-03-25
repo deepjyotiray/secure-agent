@@ -4,7 +4,7 @@ const { retrieveContext: retrieveLanceContext } = require("../../../rag")
 const { generateResponse } = require("../../../gateway/responder")
 
 async function execute(params, context, toolConfig) {
-    const query = context.rawMessage || ""
+    const query = context.resolvedRequest?.effectiveMessage || context.rawMessage || ""
     const data = await retrieveLanceContext(query, { type: "policy" })
 
     const systemPrompt = `You are a helpful assistant for Healthy Meal Spot.

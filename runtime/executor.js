@@ -4,6 +4,9 @@ const logger = require("../gateway/logger")
 const { getActiveWorkspace } = require("../core/workspace")
 const { prepareRequest } = require("./contextPipeline")
 const { complete, getFlowConfig } = require("../providers/llm")
+const { getHistory } = require("./sessionMemory")
+const flowMemory = require("./flowMemory")
+const conversationState = require("./conversationState")
 
 let _cachedProfile = null
 let _cachedWorkspace = null
@@ -92,9 +95,31 @@ async function execute(manifest, intent, context) {
     logger.info({ intent: intent.intent, tool: toolName }, "executor: dispatching")
     context.profile = getProfile()
     context.profileFacts = buildProfileFacts(context.profile, toolName)
+    context.flow = context.flow || "customer"
+    if (!Array.isArray(context.history) && context.phone) {
+        context.history = context.flow === "customer"
+            ? flowMemory.getHistory("customer", context.phone)
+            : getHistory(context.phone)
+    }
+    if (!context.conversationState && context.phone && (context.flow === "customer" || context.flow === "admin")) {
+        context.conversationState = conversationState.getState(context.flow, context.phone)
+    }
+    if (!context.resolvedRequest && context.rawMessage) {
+        context.resolvedRequest = {
+            flow: context.flow,
+            originalMessage: context.rawMessage,
+            effectiveMessage: context.rawMessage,
+            wasRewritten: false,
+            followUpReason: null,
+            followUpConfidence: 0,
+            activeTopic: context.conversationState?.topic || null,
+            selection: context.conversationState?.selection || null,
+            appliedFilters: intent.filter || {},
+            lastIntent: intent.intent || null,
+        }
+    }
     
     // Resolve flow and LLM config
-    context.flow = context.flow || "customer"
     context.llmConfig = manifest.agent?.llm || getFlowConfig(context.flow)
 
     // Standard context prep for tools that use LLM directly

@@ -49,7 +49,7 @@ function deterministicFallback(message, profile) {
 }
 
 async function execute(_params, context, toolConfig) {
-    const message = context.rawMessage || ""
+    const message = context.resolvedRequest?.effectiveMessage || context.rawMessage || ""
     const history = Array.isArray(context.history) ? context.history.slice(-8) : []
     const extraContext = context.extraContext || ""
     const wp = context.profile || {}

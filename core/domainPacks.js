@@ -62,4 +62,32 @@ function clearCache() {
     _cache.clear()
 }
 
-module.exports = { listPacks, loadPack, getPack, getPackForWorkspace, clearCache }
+function resolvePackFollowUp(pack, input) {
+    if (!pack || typeof pack.resolveFollowUp !== "function") return null
+    try {
+        const result = pack.resolveFollowUp(input)
+        return result && typeof result === "object" ? result : null
+    } catch {
+        return null
+    }
+}
+
+function extractPackConversationState(pack, input) {
+    if (!pack || typeof pack.extractConversationState !== "function") return null
+    try {
+        const result = pack.extractConversationState(input)
+        return result && typeof result === "object" ? result : null
+    } catch {
+        return null
+    }
+}
+
+module.exports = {
+    listPacks,
+    loadPack,
+    getPack,
+    getPackForWorkspace,
+    clearCache,
+    resolvePackFollowUp,
+    extractPackConversationState,
+}
