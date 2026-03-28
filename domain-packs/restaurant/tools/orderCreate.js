@@ -68,6 +68,29 @@ function formatCart(items) {
     return lines.join("\n") + `\n\n💰 *Total: ₹${total}*`
 }
 
+function buildSelectionItems(selection) {
+    const rawItems = Array.isArray(selection?.items) ? selection.items : []
+    return rawItems
+        .map((item, index) => ({
+            id: item.id || `selection-${index + 1}-${String(item.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+            name: String(item.name || "").trim(),
+            price: Number(item.price || 0),
+            qty: Number(item.qty || 1),
+            veg: item.veg === undefined ? null : !!item.veg,
+        }))
+        .filter(item => item.name)
+}
+
+function isSelectionOrderRequest(text, selection, pending) {
+    const normalized = String(text || "").trim().toLowerCase()
+    if (!selection?.items?.length) return false
+    if (/\b(add|order|put)\b.*\b(all|these|them|those|items)\b.*\b(cart|order)\b/i.test(text)) return true
+    if (pending?.kind === "selection_order" && (/^(all|all of them|all these|all those)$/i.test(normalized) || normalized === String(selection.label || "").trim().toLowerCase() || normalized === `all ${String(selection.label || "").trim().toLowerCase()}`)) {
+        return true
+    }
+    return false
+}
+
 const HOME = `What would you like to do?\n\n1. Browse Menu\n2. Place Order\n3. Order Support`
 
 async function execute(_params, context, toolConfig) {
@@ -77,8 +100,34 @@ async function execute(_params, context, toolConfig) {
     const n    = parseInt(text, 10)
 
     const c = cart.get(phone)
+    const selection = context.conversationState?.selection
+    const pending = context.conversationState?.pending
 
     if (!c) {
+        if (isSelectionOrderRequest(text, selection, pending)) {
+            const selectedItems = buildSelectionItems(selection)
+            if (!selectedItems.length) return "I couldn't match those menu items yet. Please ask me to show that section again."
+            const user = getUser(db_path, phone)
+            if (!user) {
+                cart.set(phone, {
+                    state: "registering_name",
+                    items: selectedItems,
+                    user: null,
+                    selectionSource: selection.label,
+                    resumeAfterRegistration: "selection_checkout",
+                })
+                return `I can add all items from *${selection.label}* for you.\n\nFirst, what's your *full name*?`
+            }
+            const sections = getSections(db_path)
+            cart.set(phone, {
+                state: "order_add_more",
+                sections,
+                items: selectedItems,
+                user,
+                selectionSource: selection.label,
+            })
+            return `Added all items from *${selection.label}* to your cart. ✅\n\n${formatCart(selectedItems)}\n\n1. Add more items\n2. Checkout`
+        }
         if (n === 1) {
             const sections = getSections(db_path)
             cart.set(phone, { state: "browsing_section", sections, items: [], user: null })
@@ -118,7 +167,13 @@ async function execute(_params, context, toolConfig) {
         })
         if (!result.success) return "Registration failed. Please try again."
         const sections = getSections(db_path)
-        cart.update(phone, { state: "order_section", sections, user: result.user, regName: undefined })
+        const nextState = c.resumeAfterRegistration === "selection_checkout" && Array.isArray(c.items) && c.items.length
+            ? "order_add_more"
+            : "order_section"
+        cart.update(phone, { state: nextState, sections, user: result.user, regName: undefined, resumeAfterRegistration: undefined })
+        if (nextState === "order_add_more") {
+            return `You're registered! ✅\n\n${formatCart(c.items)}\n\n1. Add more items\n2. Checkout`
+        }
         return `You're registered! ✅\n\nHi ${result.user.name}! *Select a section to order from:*\n\n${formatSections(sections)}\n\nReply with a number, or *0* to go back.`
     }
 

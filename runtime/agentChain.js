@@ -5,43 +5,23 @@ const yaml = require("js-yaml")
 const path = require("path")
 
 const { sanitize }                       = require("../gateway/sanitizer")
-const { routeCustomerMessage }           = require("../gateway/customerRouter")
 const { isAdmin, parseAdminMessage, handleAdmin } = require("../gateway/admin")
 const { getGovernanceSnapshot }          = require("../gateway/adminGovernance")
-const { dispatchAgentTask }               = require("../gateway/adminAgent")
-const cartStore                          = require("../tools/cartStore")
 const executor                           = require("./executor")
 const logger                             = require("../gateway/logger")
-const { addTurn, getHistory }            = require("./sessionMemory")
 const flowMemory                         = require("./flowMemory")
 const conversationState                  = require("./conversationState")
 const { getActiveWorkspace }             = require("../core/workspace")
-const { loadPack, getPackForWorkspace }  = require("../core/domainPacks")
+const { getPackForWorkspace }            = require("../core/domainPacks")
 const debugInterceptor                   = require("./debugInterceptor")
 const { getFlowConfig, complete }        = require("../providers/llm")
-const { prepareRequest }                 = require("./contextPipeline")
-const { resolveFollowUp }                = require("./followUpResolver")
-const { buildResolvedRequest }           = require("./resolvedRequest")
-const { decideCustomerExecution }        = require("./flowOrchestrator")
+const { buildCustomerBackendMessages, LIGHT_BACKEND_INTENTS, getCachedContext, setCachedContext } = require("./customerContext")
+const { executeCustomerFlow }            = require("./customerFlow")
+const { validateCustomerBackendResponse } = require("./customerResponseGuard")
+const { recordCustomerOutcome }          = require("./customerOutcome")
 const { loadProfile }                    = require("../setup/profileService")
 const { loadNotes }                      = require("../core/dataModelNotes")
 const { buildDbContext, getDbSchema, selectRelevantTables } = require("../gateway/admin")
-const { extractPackConversationState }   = require("../core/domainPacks")
-
-function buildProfileFacts(profile = {}) {
-    const lines = []
-    for (const [k, v] of Object.entries(profile)) {
-        if (!v || typeof v !== "string") continue
-        if (["openaiKey", "workspaceId", "agentManifest", "domainPack", "scrapeWebsite", "customFields"].includes(k)) continue
-        lines.push(`- ${k}: ${v}`)
-    }
-    const custom = Array.isArray(profile.customFields) ? profile.customFields : []
-    for (const field of custom) {
-        if (!field?.key || !field?.value) continue
-        lines.push(`- ${field.key}: ${field.value}`)
-    }
-    return lines.join("\n") || "No profile data available."
-}
 
 async function loadCustomerRagHints(message, dbPath) {
     try {
@@ -55,47 +35,62 @@ async function loadCustomerRagHints(message, dbPath) {
     }
 }
 
-async function answerCustomerViaConfiguredMode(resolvedRequest, phone, manifest) {
+async function answerCustomerViaConfiguredMode(resolvedRequest, phone, manifest, routedIntent = {}, conversationStateOverride = null) {
     const message = resolvedRequest.effectiveMessage || resolvedRequest.originalMessage || ""
     const workspaceId = getActiveWorkspace()
     const flowCfg = getFlowConfig("customer")
     const profile = loadProfile(workspaceId)
     const dbPath = profile.dbPath
-    const relevantTables = await selectRelevantTables(message, workspaceId)
-    const dbContext = await buildDbContext(workspaceId, relevantTables)
-    const schema = dbPath ? getDbSchema(dbPath, relevantTables) : ""
+    const intent = routedIntent.intent || resolvedRequest.lastIntent || "general_chat"
+    const useLightContext = LIGHT_BACKEND_INTENTS.has(intent)
+    let relevantTables = null
+    let dbContext = ""
+    let schema = ""
     const notes = loadNotes(workspaceId)
-    const ragHints = await loadCustomerRagHints(message, dbPath)
+    let ragHints = ""
     const history = flowMemory.getHistory("customer", phone)
-    const businessName = profile.businessName || manifest.agent?.name || "the business"
-    const systemContext = `You are the customer-facing assistant for ${businessName}.
-Answer using the provided business profile, database context, schema, notes, retrieval hints, and recent conversation history.
-If the configured mode is a backend service, keep this request on that backend path.
-Be concise, accurate, and helpful for a WhatsApp customer.`
-    const dynamicContext = [
-        "=== DATABASE CONTEXT ===",
-        dbContext,
-        "",
-        "=== DATABASE SCHEMA ===",
-        schema,
-        notes ? `\n=== DATA MODEL NOTES ===\n${notes}` : "",
-        ragHints ? `\n=== RETRIEVAL HINTS ===\n${ragHints}` : "",
-    ].filter(Boolean).join("\n")
-    const messages = prepareRequest(`Customer message:\n${message}`, "customer", {
-        systemContext,
-        profileFacts: buildProfileFacts(profile),
-        dynamicContext,
-        history,
-        conversationState: conversationState.getState("customer", phone),
-        resolvedRequest,
-    })
-    const response = await complete(messages, { flow: "customer", llmConfig: flowCfg, phone })
-    return response || manifest.agent.error_message || "I'm sorry, I couldn't process that right now."
-}
 
-function isSupportMenuReply(message) {
-    const text = String(message || "").trim()
-    return text === "0" || /^[1-5]$/.test(text)
+    if (!useLightContext) {
+        const relevantStart = Date.now()
+        relevantTables = await selectRelevantTables(message, workspaceId)
+        logger.info({ phone, intent, durationMs: Date.now() - relevantStart, tables: relevantTables }, "perf: customer relevant tables")
+
+        const cached = getCachedContext(workspaceId, relevantTables)
+        if (cached) {
+            dbContext = cached.dbContext
+            schema = cached.schema
+        } else {
+            const contextStart = Date.now()
+            dbContext = await buildDbContext(workspaceId, relevantTables)
+            schema = dbPath ? getDbSchema(dbPath, relevantTables) : ""
+            setCachedContext(workspaceId, relevantTables, { dbContext, schema })
+            logger.info({ phone, intent, durationMs: Date.now() - contextStart }, "perf: customer db context built")
+        }
+
+        const ragStart = Date.now()
+        ragHints = await loadCustomerRagHints(message, dbPath)
+        logger.info({ phone, intent, durationMs: Date.now() - ragStart }, "perf: customer rag hints")
+    }
+
+    const activeConversationState = conversationStateOverride || conversationState.getState("customer", phone)
+    const messages = buildCustomerBackendMessages({
+        message,
+        phone,
+        manifest,
+        profile,
+        history,
+        conversationState: activeConversationState,
+        resolvedRequest,
+        dbContext,
+        schema,
+        notes,
+        ragHints,
+    })
+    logger.info({ phone, intent, lightContext: useLightContext, messageCount: messages.length }, "perf: customer backend request prepared")
+    const llmStart = Date.now()
+    const response = await complete(messages, { flow: "customer", llmConfig: flowCfg, phone })
+    logger.info({ phone, intent, durationMs: Date.now() - llmStart }, "perf: customer backend completion")
+    return response || manifest.agent.error_message || "I'm sorry, I couldn't process that right now."
 }
 
 class AgentChain {
@@ -108,29 +103,27 @@ class AgentChain {
         context.conversationState = context.conversationState || conversationState.getState("customer", phone)
         const response = await executor.execute(this._manifest, intent, context)
         if (response) {
-            const packState = extractPackConversationState(this._domainPack, {
-                flow: "customer",
-                message: originalMessage,
-                resolvedMessage: context.rawMessage,
-                response,
-                intent: intent.intent,
-                filters: intent.filter || {},
-                conversationState: context.conversationState,
-            }) || {}
-            addTurn(phone, originalMessage, response, this._manifest.agent?.name || "customer")
-            flowMemory.addTurn("customer", phone, originalMessage, response, this._manifest.agent?.name || "customer")
-            conversationState.recordInteraction("customer", phone, {
+            recordCustomerOutcome({
+                phone,
                 message: originalMessage,
                 response,
-                intent: intent.intent,
-                filters: context.resolvedRequest?.appliedFilters || intent.filter || {},
+                manifest: this._manifest,
+                domainPack: this._domainPack,
+                effectiveMessage: context.rawMessage,
+                routedIntent: {
+                    intent: intent.intent,
+                    filter: context.resolvedRequest?.appliedFilters || intent.filter || {},
+                },
+                resolvedRequest: context.resolvedRequest,
+                resolved: context.resolvedMeta,
                 route: context.flow || "customer",
                 task: intent.intent,
-                topic: context.resolvedRequest?.wasRewritten ? context.resolvedRequest.activeTopic : undefined,
-                slots: context.resolvedMeta?.resolved
-                    ? { resolvedMessage: context.rawMessage, resolutionReason: context.resolvedMeta.reason }
-                    : undefined,
-                ...packState,
+                executionMeta: {
+                    mode: "tool",
+                    reason: "tool_execution",
+                    backend: "direct",
+                    strategy: getFlowConfig("customer").execution?.strategy || "auto",
+                },
             })
         }
         return response
@@ -159,131 +152,94 @@ class AgentChain {
         }
 
         const currentConversationState = conversationState.getState("customer", phone)
-        const resolved = resolveFollowUp({
-            flow: "customer",
-            message,
-            conversationState: currentConversationState,
-            domainPack: this._domainPack,
-        })
-        const effectiveMessage = resolved.message || message
-        const resolvedRequest = buildResolvedRequest({
-            flow: "customer",
-            originalMessage: message,
-            effectiveMessage,
-            conversationState: currentConversationState,
-            resolution: resolved,
-        })
-        if (resolved.resolved) {
-            logger.info({ phone, originalMessage: message, effectiveMessage, reason: resolved.reason, confidence: resolved.confidence }, "chain: follow-up resolved")
-        }
 
-        const customerFlowCfg = getFlowConfig("customer")
-
-        // 2. Active session check — skip LLM entirely
-        const activeSession = cartStore.get(phone)
-        const activeSupport = cartStore.get(`support:${phone}`)
-
-        if (activeSession && activeSession.state === "support_handoff") {
-            // active session handed off to support — clear session, route to support
-            cartStore.clear(phone)
-            return await this._executeAndStore({ intent: "support", filter: {} }, { phone, rawMessage: effectiveMessage, resolvedMeta: resolved, resolvedRequest }, message, phone)
-        }
-
-        if (activeSession) {
-            const cartIntent = this._sessionRouting.activeCartIntent || Object.keys(this._manifest.intents)[0] || "general_chat"
-            return await this._executeAndStore({ intent: cartIntent, filter: {} }, { phone, rawMessage: effectiveMessage, resolvedMeta: resolved, resolvedRequest }, message, phone)
-        }
-
-        if (activeSupport) {
-            if (activeSupport.state === "menu" && !isSupportMenuReply(message)) {
-                try {
-                    const reroute = await routeCustomerMessage(effectiveMessage, this._manifest, { resolvedRequest })
-                    if (reroute.intent && reroute.intent !== "support") {
-                        cartStore.clear(`support:${phone}`)
-                    } else {
-                        return await this._executeAndStore({ intent: "support", filter: {} }, { phone, rawMessage: effectiveMessage, resolvedMeta: resolved, resolvedRequest }, message, phone)
-                    }
-                } catch {
-                    cartStore.clear(`support:${phone}`)
-                }
-            } else {
-                return await this._executeAndStore({ intent: "support", filter: {} }, { phone, rawMessage: effectiveMessage, resolvedMeta: resolved, resolvedRequest }, message, phone)
-            }
-        }
-
-        let routedIntent = null
         try {
-            const { getCachedIntent } = require("./previewEngine")
-            const cached = getCachedIntent(phone, message)
-            if (cached) {
-                routedIntent = { intent: cached.intent, filter: cached.filter || {} }
-                logger.info({ phone, intent: routedIntent.intent, source: "cache" }, "chain: intent parsed (cached)")
-            } else {
-                routedIntent = await routeCustomerMessage(effectiveMessage, this._manifest, { resolvedRequest })
-                logger.info({ phone, intent: routedIntent.intent }, "chain: intent parsed")
-            }
-        } catch {
-            routedIntent = { intent: "general_chat", filter: {} }
-        }
-
-        const executionPlan = decideCustomerExecution({
-            flowConfig: customerFlowCfg,
-            routedIntent,
-            manifest: this._manifest,
-        })
-        logger.info({ phone, mode: executionPlan.mode, reason: executionPlan.reason, intent: executionPlan.intent }, "chain: customer flow orchestrated")
-
-        if (executionPlan.mode === "backend") {
-            resolvedRequest.lastIntent = routedIntent.intent
-            resolvedRequest.appliedFilters = routedIntent.filter || resolvedRequest.appliedFilters
-            const response = await answerCustomerViaConfiguredMode(resolvedRequest, phone, this._manifest)
-            const packState = extractPackConversationState(this._domainPack, {
-                flow: "customer",
+            const outcome = await executeCustomerFlow({
                 message,
-                resolvedMessage: effectiveMessage,
-                response,
-                intent: routedIntent.intent || currentConversationState.lastIntent || "general_chat",
-                filters: routedIntent.filter || currentConversationState.filters || {},
+                phone,
+                manifest: this._manifest,
+                domainPack: this._domainPack,
+                sessionRouting: this._sessionRouting,
                 conversationState: currentConversationState,
-            }) || {}
-            addTurn(phone, message, response, this._manifest.agent?.name || "customer")
-            flowMemory.addTurn("customer", phone, message, response, this._manifest.agent?.name || "customer")
-            conversationState.recordInteraction("customer", phone, {
-                message,
-                response,
-                intent: routedIntent.intent,
-                route: "customer_backend",
-                task: "customer_backend",
-                topic: resolvedRequest.wasRewritten ? resolvedRequest.activeTopic : undefined,
-                filters: resolvedRequest.appliedFilters,
-                slots: resolved.resolved
-                    ? { resolvedMessage: effectiveMessage, resolutionReason: resolved.reason }
-                    : undefined,
-                ...packState,
+                executeIntent: ({ intent, effectiveMessage, resolvedMeta, resolvedRequest, originalMessage, conversationState: activeTurnState }) => {
+                    return this._executeAndStore(intent, { phone, rawMessage: effectiveMessage, resolvedMeta, resolvedRequest, conversationState: activeTurnState }, originalMessage, phone)
+                },
+                answerViaConfiguredMode: async ({ resolvedRequest, routedIntent, conversationState: activeTurnState }) => {
+                    return await answerCustomerViaConfiguredMode(resolvedRequest, phone, this._manifest, routedIntent, activeTurnState)
+                },
             })
-            debugInterceptor.logMessage(phone, message, response, "customer_backend", "whatsapp", null)
-            return response
-        }
 
-        // 3. Intent router — manifest-driven business classification
-        let intent = routedIntent.intent
-        let filter = routedIntent.filter || {}
-
-        // 4. Guard — fallback to public concierge if route is unknown
-        if (!this._manifest.intents[intent]) {
-            intent = this._manifest.intents.general_chat ? "general_chat" : Object.keys(this._manifest.intents)[0]
-        }
-
-        // 5. Execute
-        try {
-            resolvedRequest.lastIntent = intent
-            resolvedRequest.appliedFilters = filter || resolvedRequest.appliedFilters
-            const response = await this._executeAndStore({ intent, filter }, { phone, rawMessage: effectiveMessage, resolvedMeta: resolved, resolvedRequest }, message, phone)
-            if (response) {
+            if (outcome.route === "customer_backend") {
+                const guardResult = validateCustomerBackendResponse(outcome.response, {
+                    execution: outcome.executionConfig,
+                    fallback: this._manifest.agent.error_message || "I'm sorry, I couldn't process that right now.",
+                })
+                const response = guardResult.response
+                const effectiveMessage = outcome.turn.effectiveMessage
+                const resolved = outcome.turn.resolved
+                const resolvedRequest = outcome.turn.resolvedRequest
+                const routedIntent = outcome.routedIntent || { intent: "general_chat", filter: {} }
+                if (!guardResult.ok) {
+                    logger.warn({ phone, issues: guardResult.issues, originalLength: guardResult.originalLength }, "chain: customer backend response guarded")
+                }
+                recordCustomerOutcome({
+                    phone,
+                    message,
+                    response,
+                    manifest: this._manifest,
+                    domainPack: this._domainPack,
+                    effectiveMessage,
+                    routedIntent,
+                    resolvedRequest,
+                    resolved,
+                    route: "customer_backend",
+                    task: "customer_backend",
+                    executionMeta: {
+                        mode: "backend",
+                        reason: outcome.executionPlan?.reason || "customer_backend",
+                        backend: getFlowConfig("customer").backend || "direct",
+                        strategy: outcome.executionConfig?.strategy || "auto",
+                        policy: outcome.policy?.reason || "allowed",
+                        responseGuardIssues: guardResult.issues,
+                    },
+                })
                 return response
             }
 
-            // check domain gate as fallback for empty/out-of-domain responses
+            if (outcome.route === "customer_planner") {
+                recordCustomerOutcome({
+                    phone,
+                    message,
+                    response: outcome.response,
+                    manifest: this._manifest,
+                    domainPack: this._domainPack,
+                    effectiveMessage: outcome.turn?.effectiveMessage || message,
+                    routedIntent: outcome.routedIntent || { intent: "general_chat", filter: {} },
+                    resolvedRequest: outcome.turn?.resolvedRequest || null,
+                    resolved: outcome.turn?.resolved || null,
+                    route: "customer_planner",
+                    task: "customer_planner",
+                    executionMeta: {
+                        mode: "planner",
+                        reason: outcome.plannerDecision?.reason || "customer_planner",
+                        backend: "grounded_planner",
+                        strategy: outcome.executionConfig?.strategy || "auto",
+                        groundedIn: outcome.plannerDecision?.groundedIn || "conversation_state",
+                    },
+                })
+                return outcome.response
+            }
+
+            if (outcome.response) {
+                if (outcome.route === "policy_blocked") {
+                    debugInterceptor.logMessage(phone, message, outcome.response, "policy_blocked", "whatsapp", {
+                        reason: outcome.policy?.reason || "blocked",
+                        strategy: outcome.executionConfig?.strategy || "auto",
+                    })
+                }
+                return outcome.response
+            }
+
             const { isInDomain } = require("../gateway/policyEngine")
             if (!isInDomain(message, getActiveWorkspace())) {
                 return this._manifest.agent.out_of_domain_message || "I can only help with business-related questions."
@@ -291,6 +247,7 @@ class AgentChain {
 
             return this._manifest.agent.error_message || "I'm sorry, I couldn't process that. How else can I help?"
         } catch (err) {
+            const intent = err?.intent || "customer_flow"
             logger.error({ phone, intent, err }, "chain: executor error")
         }
 

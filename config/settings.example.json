@@ -24,5 +24,32 @@
       "model": "gpt-4o",
       "api_key": "sk-your-openai-key-here"
     }
+  },
+  "flows": {
+    "customer": {
+      "backend": "openclaw",
+      "llm": {
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "api_key": "sk-your-openai-key-here"
+      },
+      "execution": {
+        "strategy": "auto",
+        "tool_intents": ["support", "place_order"],
+        "backend_intents": ["general_chat", "greet"],
+        "backend_capabilities": {
+          "conversational": true,
+          "structured": false,
+          "memory": true,
+          "handoffs": false,
+          "structured_output": false
+        },
+        "response_policy": {
+          "max_chars": 1200,
+          "strip_markdown": false,
+          "disallow_patterns": ["system prompt", "internal policy"]
+        }
+      }
+    }
   }
 }

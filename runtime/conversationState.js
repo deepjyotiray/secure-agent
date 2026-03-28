@@ -19,8 +19,11 @@ function createDefaultState(flow, conversationId) {
         route: null,
         topic: null,
         selection: null,
+        pending: null,
+        customerProfile: null,
         filters: {},
         slots: {},
+        execution: null,
         lastIntent: null,
         lastMessage: null,
         lastResponse: null,
@@ -69,10 +72,11 @@ function saveState(flow, conversationId, nextState) {
     return cloneState(merged)
 }
 
-function inferTopic(message, filters = {}, previous = null) {
+function inferTopic(flow, message, filters = {}, previous = null) {
     if (typeof filters.query === "string" && filters.query.trim()) {
         return { label: filters.query.trim(), source: "filter", confidence: 0.7 }
     }
+    if (flow === "customer") return previous || null
     if (typeof message === "string") {
         const cleaned = message.trim().replace(/\s+/g, " ")
         if (cleaned && cleaned.split(/\s+/).length >= 2) {
@@ -88,10 +92,13 @@ function recordInteraction(flow, conversationId, details = {}) {
         ...current,
         task: details.task || current.task || null,
         route: details.route || current.route || null,
-        topic: details.topic || inferTopic(details.message, details.filters || {}, current.topic),
+        topic: details.topic || inferTopic(flow, details.message, details.filters || {}, current.topic),
         selection: details.selection || current.selection || null,
+        pending: details.pending !== undefined ? details.pending : current.pending || null,
+        customerProfile: details.customerProfile !== undefined ? details.customerProfile : current.customerProfile || null,
         filters: details.filters ? { ...details.filters } : current.filters || {},
         slots: details.slots ? { ...current.slots, ...details.slots } : current.slots || {},
+        execution: details.execution ? { ...(current.execution || {}), ...details.execution } : current.execution || null,
         lastIntent: details.intent || current.lastIntent || null,
         lastMessage: details.message || current.lastMessage || null,
         lastResponse: details.response || current.lastResponse || null,

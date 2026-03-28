@@ -1,58 +1,32 @@
 "use strict"
 
-const fs       = require("fs")
-const yaml     = require("js-yaml")
-const fetch    = require("node-fetch")
-const { complete } = require("../providers/llm")
-const cart     = require("./cartStore")
-const logger   = require("../gateway/logger")
+const cart = require("./cartStore")
+const logger = require("../gateway/logger")
 const settings = require("../config/settings.json")
-
-const SEND_URL    = `http://127.0.0.1:${settings.api.port}/send`
-const SEND_SECRET = settings.api.secret
-
-function normalisePhone(p) { return String(p).replace(/@.*$/, "").replace(/\D/g, "") }
-
-function loadFaq(faqPath) {
-    if (!faqPath || !fs.existsSync(faqPath)) return { faqs: [], escalation_triggers: [] }
-    try {
-        return yaml.load(fs.readFileSync(faqPath, "utf8")) || { faqs: [], escalation_triggers: [] }
-    } catch { return { faqs: [], escalation_triggers: [] } }
-}
-
-function matchFaq(message, faqs) {
-    const m = message.toLowerCase()
-    let best = null, bestScore = 0
-    for (const f of faqs) {
-        const score = (f.keywords || []).reduce((n, kw) => n + (m.includes(kw) ? 1 : 0), 0)
-        if (score > bestScore) { bestScore = score; best = f }
-    }
-    return bestScore > 0 ? best : null
-}
-
-function isEscalation(message, triggers) {
-    const m = message.toLowerCase()
-    return (triggers || []).some(t => m.includes(t.toLowerCase()))
-}
+const {
+    loadFaq,
+    matchFaq,
+    isEscalation,
+    normalisePhone,
+    escalateToAdmin,
+} = require("./supportFlow")
 
 async function escalate(phone, issueText, adminPhone) {
     const last10 = normalisePhone(phone).slice(-10)
-    const to = adminPhone.startsWith("+") ? adminPhone : `+${adminPhone}`
     const msg = `🚨 *Support Escalation*\n\n👤 Customer: +${last10}\n💬 "${issueText}"`
-    try {
-        await fetch(SEND_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-secret": SEND_SECRET },
-            body: JSON.stringify({ phone: to, message: msg })
-        })
-        logger.info({ phone }, "genericSupport: escalated to admin")
-    } catch (err) {
-        logger.error({ err }, "genericSupport: escalation failed")
-    }
+    await escalateToAdmin({
+        phone,
+        adminPhone,
+        body: msg,
+        logger,
+        successLog: "genericSupport: escalated to admin",
+        errorLog: "genericSupport: escalation failed",
+    })
 }
 
 async function execute(_params, context, toolConfig) {
-    const { phone, rawMessage: msg } = context
+    const phone = context.phone
+    const msg = context.resolvedRequest?.effectiveMessage || context.rawMessage
     const { faq_path, escalation_phone, business_name } = toolConfig
     const wp = context.profile || {}
     const adminPhone = escalation_phone || wp.contactPhone || settings.admin?.number || ""
@@ -96,7 +70,9 @@ Customer message: ${text}
 Answer:`
 
     try {
-        const response = await complete(prompt)
+        const response = typeof context.prepareLLMRequest === "function"
+            ? await context.prepareLLMRequest(prompt)
+            : null
         return response || "I'm not sure about that. Would you like to talk to a human? Just say 'talk to human'."
     } catch {
         return "I'm having trouble right now. Would you like to talk to a human? Just say 'talk to human'."

@@ -16,10 +16,10 @@ Incoming message
 
 ## Customer Pipeline
 
-Every customer message passes through 5 sequential gates. If any gate rejects, the message never reaches the next stage.
+Every customer message passes through sequential gates. If any gate rejects, the message never reaches the next stage.
 
 ```
-Message ──► Sanitizer ──► Session Check ──► Intent Router ──► Policy Engine ──► Tool Executor ──► Response
+Message ──► Sanitizer ──► Session Check ──► Customer Profile Hydration ──► Intent Router ──► Policy Engine ──► Tool Executor ──► Response
 ```
 
 ### Gate 1 — Sanitizer
@@ -57,7 +57,26 @@ Checks if the customer has an active multi-turn session:
 
 This avoids unnecessary LLM calls during multi-turn conversations like ordering or support.
 
-### Gate 3 — Intent Router
+### Gate 3 — Customer Profile Hydration
+
+**Files:** `runtime/customerFlow.js` → `runtime/customerProfileHydrator.js` → `runtime/customerState.js`
+
+Before routing or planning, the runtime builds a unified `conversationState.customerProfile` for the active phone number.
+
+Merge order:
+- hydrated DB profile from the active workspace database
+- saved customer memory
+- current conversation state
+- inline patch from the current message
+
+Hydration reads canonical customer fields from the workspace DB by phone, preferring `users` and falling back to recent `orders` when needed. This gives the planner, backend context builder, and stateful tools one shared customer identity model.
+
+Important boundary:
+- hydration is a read model only
+- it does not automatically copy DB values into conversational memory
+- conversational memory still stores only explicit user-provided facts
+
+### Gate 4 — Intent Router
 
 **Files:** `gateway/customerRouter.js` → `gateway/intentParser.js`
 
@@ -87,7 +106,7 @@ The LLM returns:
 
 If the LLM fails or returns an unknown intent, the heuristic result is used as fallback.
 
-### Gate 4 — Policy Engine
+### Gate 5 — Policy Engine
 
 **File:** `gateway/policyEngine.js`  
 **Config:** `policy/policy.yml`
@@ -125,7 +144,9 @@ domain_keywords:
 
 Blocked intents fall through to the next agent in the chain (support agent) rather than hard-blocking the customer.
 
-### Gate 5 — Tool Executor
+Hydrated customer identity does not bypass this gate. Policy still controls what intents a customer may trigger. The hydrated profile only grounds answers for already-allowed customer paths.
+
+### Gate 6 — Tool Executor
 
 **File:** `runtime/executor.js`
 
@@ -194,7 +215,7 @@ The live system treats the Models page as authoritative for each flow:
 
 Context injection is flow-specific:
 
-- `customer` sends workspace profile, DB context, schema, notes, retrieval hints, and recent history
+- `customer` sends workspace profile, hydrated customer profile, DB context, schema, notes, retrieval hints, and recent history
 - `admin` sends workspace profile, DB context, schema, notes, and retrieval hints
 - `agent` sends no business context
 
@@ -392,6 +413,12 @@ Every tool must be registered in the governance policy:
 ```
 
 If a tool isn't registered → **blocked**: `"Tool 'x' is not registered in governance policy."`
+
+Customer profile hydration does not weaken governance:
+- customer hydration is a bounded runtime read from the active workspace DB
+- customer policy still limits customer capabilities by intent
+- admin governance still limits privileged tools by worker, role, risk, and approval mode
+- the LLM still cannot invent or unlock new tools because dispatch remains deterministic
 
 ### Layer 2 — Worker Allowlist
 

@@ -6,13 +6,15 @@ var _availableTools = [];
 var _providers = ["openai", "anthropic", "ollama", "mlx", "backend"];
 var _backendOnly = ["openclaw", "myclaw", "nemoclaw"];
 var _currentFlow = "customer";
+var _customerBackendPresets = [];
 
 function $(id) { return document.getElementById(id) }
 
 function ensureFlow(flow) {
-  if (!_flowConfigs[flow]) _flowConfigs[flow] = { llm: {}, backend: "direct", tools: [], auth: {} };
+  if (!_flowConfigs[flow]) _flowConfigs[flow] = { llm: {}, backend: "direct", tools: [], auth: {}, execution: {} };
   if (!_flowConfigs[flow].llm) _flowConfigs[flow].llm = {};
   if (!_flowConfigs[flow].auth) _flowConfigs[flow].auth = {};
+  if (!_flowConfigs[flow].execution) _flowConfigs[flow].execution = {};
   return _flowConfigs[flow];
 }
 
@@ -44,12 +46,51 @@ function syncCurrentFlowFromInputs() {
   var keywordEl = $("keyword-" + flow);
   var pinEl = $("pin-" + flow);
   var allowedNumbersEl = $("allowed-numbers-" + flow);
+  var strategyEl = $("execution-strategy-" + flow);
+  var toolIntentsEl = $("tool-intents-" + flow);
+  var backendIntentsEl = $("backend-intents-" + flow);
+  var capabilityConversationalEl = $("capability-conversational-" + flow);
+  var capabilityStructuredEl = $("capability-structured-" + flow);
+  var capabilityMemoryEl = $("capability-memory-" + flow);
+  var capabilityHandoffsEl = $("capability-handoffs-" + flow);
+  var capabilityStructuredOutputEl = $("capability-structured-output-" + flow);
+  var responseMaxCharsEl = $("response-max-chars-" + flow);
+  var responseStripMarkdownEl = $("response-strip-markdown-" + flow);
+  var responsePatternsEl = $("response-patterns-" + flow);
 
   if (backendEl) cfg.backend = backendEl.value || cfg.backend || "direct";
   if (providerEl && !providerEl.disabled) cfg.llm.provider = providerEl.value || "";
   if (modelEl && !modelEl.disabled) cfg.llm.model = modelEl.value || "";
   if (apiKeyEl && !apiKeyEl.disabled) cfg.llm.api_key = apiKeyEl.value || "";
   if (baseUrlEl && !baseUrlEl.disabled) cfg.llm.base_url = baseUrlEl.value || "";
+  if (strategyEl) cfg.execution.strategy = strategyEl.value || "auto";
+  if (toolIntentsEl) {
+    cfg.execution.tool_intents = toolIntentsEl.value
+      .split(/[\n,]/)
+      .map(function(v) { return v.trim(); })
+      .filter(Boolean);
+  }
+  if (backendIntentsEl) {
+    cfg.execution.backend_intents = backendIntentsEl.value
+      .split(/[\n,]/)
+      .map(function(v) { return v.trim(); })
+      .filter(Boolean);
+  }
+  if (!cfg.execution.backend_capabilities) cfg.execution.backend_capabilities = {};
+  if (capabilityConversationalEl) cfg.execution.backend_capabilities.conversational = !!capabilityConversationalEl.checked;
+  if (capabilityStructuredEl) cfg.execution.backend_capabilities.structured = !!capabilityStructuredEl.checked;
+  if (capabilityMemoryEl) cfg.execution.backend_capabilities.memory = !!capabilityMemoryEl.checked;
+  if (capabilityHandoffsEl) cfg.execution.backend_capabilities.handoffs = !!capabilityHandoffsEl.checked;
+  if (capabilityStructuredOutputEl) cfg.execution.backend_capabilities.structured_output = !!capabilityStructuredOutputEl.checked;
+  if (!cfg.execution.response_policy) cfg.execution.response_policy = {};
+  if (responseMaxCharsEl) cfg.execution.response_policy.max_chars = parseInt(responseMaxCharsEl.value || "1200", 10);
+  if (responseStripMarkdownEl) cfg.execution.response_policy.strip_markdown = !!responseStripMarkdownEl.checked;
+  if (responsePatternsEl) {
+    cfg.execution.response_policy.disallow_patterns = responsePatternsEl.value
+      .split(/[\n,]/)
+      .map(function(v) { return v.trim(); })
+      .filter(Boolean);
+  }
   if (keywordEl) cfg.auth.keyword = keywordEl.value || "";
   if (pinEl) cfg.auth.pin = pinEl.value || "";
   if (allowedNumbersEl) {
@@ -70,7 +111,9 @@ async function loadFlowConfigs() {
     var d = await api("/agent-config");
     _flowConfigs = d.flows || {};
     _availableTools = d.availableTools || [];
+    _customerBackendPresets = d.customerBackendPresets || [];
     renderFlowEditor();
+    loadCustomerObservability();
   } catch (e) { console.error(e); }
 }
 
@@ -87,6 +130,9 @@ function renderFlowEditor() {
   var cfg = _flowConfigs[flowName] || { llm: {}, backend: "", tools: [] };
   var llm = cfg.llm || {};
   var auth = cfg.auth || {};
+  var execution = cfg.execution || {};
+  var backendCapabilities = execution.backend_capabilities || {};
+  var responsePolicy = execution.response_policy || {};
   
   // Ensure backend has a default if missing entirely
   var backend = cfg.backend || "direct";
@@ -108,6 +154,57 @@ function renderFlowEditor() {
           : "LLM mode talks directly to the selected provider. Backend is fixed to Direct LLM."}
       </div>
     </div>
+    ${flowName === 'customer' ? `
+    <div style="margin-bottom:12px; padding:12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface-2)">
+      <div style="display:flex; gap:10px; align-items:end; margin-bottom:12px; flex-wrap:wrap;">
+        <label class="field" style="flex:1; min-width:220px;"><span style="font-size: 0.75rem; color: var(--muted); text-transform: uppercase;">Preset</span>
+          <select id="customer-backend-preset" style="margin-top: 4px;">
+            <option value="">Custom / keep current</option>
+            ${_customerBackendPresets.map(function(p) { return `<option value="${p.id}">${p.name}</option>` }).join("")}
+          </select>
+        </label>
+        <button class="btn btn-ghost btn-sm" onclick="applyCustomerPreset()">Apply Preset</button>
+      </div>
+      <div style="font-size: 0.75rem; color: var(--muted); text-transform: uppercase; margin-bottom:8px;">Customer Execution Strategy</div>
+      <label class="field"><span style="font-size: 0.75rem; color: var(--muted); text-transform: uppercase;">Strategy</span>
+        <select id="execution-strategy-${flowName}" onchange="syncCurrentFlowFromInputs()" style="margin-top: 4px;">
+          <option value="auto" ${(execution.strategy || "auto") === 'auto' ? 'selected' : ''}>Auto</option>
+          <option value="tool_first" ${execution.strategy === 'tool_first' ? 'selected' : ''}>Tool First</option>
+          <option value="backend_first" ${execution.strategy === 'backend_first' ? 'selected' : ''}>Backend First</option>
+          <option value="hybrid" ${execution.strategy === 'hybrid' ? 'selected' : ''}>Hybrid</option>
+        </select>
+      </label>
+      <div style="margin-top:6px;font-size:0.78rem;color:var(--muted)">
+        Auto keeps structured intents on tools and conversational requests on the backend. Tool First prefers manifest tools. Backend First prefers the configured backend. Hybrid uses explicit intent overrides first, then falls back to Auto.
+      </div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top:12px;">
+        <label class="field"><span style="font-size: 0.75rem; color: var(--muted); text-transform: uppercase;">Always Use Tools For</span>
+          <textarea id="tool-intents-${flowName}" oninput="syncCurrentFlowFromInputs()" style="margin-top: 4px; min-height: 72px;" placeholder="support, place_order">${(execution.tool_intents || []).join("\n")}</textarea>
+        </label>
+        <label class="field"><span style="font-size: 0.75rem; color: var(--muted); text-transform: uppercase;">Always Use Backend For</span>
+          <textarea id="backend-intents-${flowName}" oninput="syncCurrentFlowFromInputs()" style="margin-top: 4px; min-height: 72px;" placeholder="general_chat, greet">${(execution.backend_intents || []).join("\n")}</textarea>
+        </label>
+      </div>
+      <div style="margin-top:12px; font-size: 0.75rem; color: var(--muted); text-transform: uppercase;">Backend Capabilities</div>
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap:8px; margin-top:8px;">
+        <label style="display:flex; align-items:center; gap:8px; font-size:0.82rem; cursor:pointer"><input id="capability-conversational-${flowName}" type="checkbox" onchange="syncCurrentFlowFromInputs()" ${backendCapabilities.conversational !== false ? 'checked' : ''}> Conversational</label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:0.82rem; cursor:pointer"><input id="capability-structured-${flowName}" type="checkbox" onchange="syncCurrentFlowFromInputs()" ${backendCapabilities.structured ? 'checked' : ''}> Structured intents</label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:0.82rem; cursor:pointer"><input id="capability-memory-${flowName}" type="checkbox" onchange="syncCurrentFlowFromInputs()" ${backendCapabilities.memory ? 'checked' : ''}> Memory</label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:0.82rem; cursor:pointer"><input id="capability-handoffs-${flowName}" type="checkbox" onchange="syncCurrentFlowFromInputs()" ${backendCapabilities.handoffs ? 'checked' : ''}> Handoffs</label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:0.82rem; cursor:pointer"><input id="capability-structured-output-${flowName}" type="checkbox" onchange="syncCurrentFlowFromInputs()" ${backendCapabilities.structured_output ? 'checked' : ''}> Structured output</label>
+      </div>
+      <div style="margin-top:12px; font-size: 0.75rem; color: var(--muted); text-transform: uppercase;">Backend Response Guard</div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-top:8px;">
+        <label class="field"><span style="font-size: 0.75rem; color: var(--muted); text-transform: uppercase;">Max Characters</span>
+          <input type="number" id="response-max-chars-${flowName}" value="${responsePolicy.max_chars || 1200}" min="80" max="4000" oninput="syncCurrentFlowFromInputs()" style="margin-top: 4px;">
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:0.82rem; cursor:pointer; margin-top: 24px;"><input id="response-strip-markdown-${flowName}" type="checkbox" onchange="syncCurrentFlowFromInputs()" ${responsePolicy.strip_markdown ? 'checked' : ''}> Strip markdown before validation</label>
+        <label class="field" style="grid-column: 1 / -1"><span style="font-size: 0.75rem; color: var(--muted); text-transform: uppercase;">Disallowed Backend Response Patterns</span>
+          <textarea id="response-patterns-${flowName}" oninput="syncCurrentFlowFromInputs()" style="margin-top: 4px; min-height: 72px;" placeholder="internal policy, system prompt">${(responsePolicy.disallow_patterns || []).join("\n")}</textarea>
+        </label>
+      </div>
+    </div>
+    ` : ''}
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
       ${flowName === 'customer' ? '' : `
       <label class="field"><span style="font-size: 0.75rem; color: var(--muted); text-transform: uppercase;">Hotword</span>
@@ -168,6 +265,65 @@ function renderFlowEditor() {
   `;
   
   container.innerHTML = html;
+}
+
+async function applyCustomerPreset() {
+  var select = $("customer-backend-preset");
+  if (!select || !select.value) return;
+  try {
+    var d = await api("/agent-config/customer-presets/" + encodeURIComponent(select.value));
+    var preset = d.preset;
+    if (!preset) return;
+    var cfg = ensureFlow("customer");
+    cfg.execution = JSON.parse(JSON.stringify(preset.execution || {}));
+    if (preset.id) cfg.backend = preset.id;
+    renderFlowEditor();
+  } catch (e) {
+    alert("Preset load failed: " + e.message);
+  }
+}
+
+async function loadCustomerObservability() {
+  var el = $("customer-observability");
+  if (!el) return;
+  try {
+    var d = await api("/setup/customer/observability?limit=100");
+    var s = d.summary || {};
+    var routeRows = Object.entries(s.byRoute || {}).map(function(entry) {
+      return `<div><strong>${entry[0]}</strong>: ${entry[1]}</div>`;
+    }).join("") || "<div>No recent route data.</div>";
+    var strategyRows = Object.entries(s.byStrategy || {}).map(function(entry) {
+      return `<div><strong>${entry[0]}</strong>: ${entry[1]}</div>`;
+    }).join("") || "<div>No recent strategy data.</div>";
+    var recentRows = (s.recent || []).slice(0, 8).map(function(item) {
+      return `<div style="padding:8px 0;border-top:1px solid var(--border);font-size:0.8rem">
+        <div><strong>${item.route}</strong> · ${item.strategy || "unknown"} ${item.backend ? "· " + item.backend : ""}</div>
+        <div style="color:var(--muted)">${item.reason || "no reason"}${item.guardIssues && item.guardIssues.length ? " · guard: " + item.guardIssues.join(", ") : ""}</div>
+      </div>`;
+    }).join("") || "<div>No recent customer interactions logged yet.</div>";
+
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div>
+          <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Summary</div>
+          <div><strong>Total:</strong> ${s.total || 0}</div>
+          <div><strong>Policy blocks:</strong> ${s.policyBlocks || 0}</div>
+          <div><strong>Backend guard hits:</strong> ${s.backendGuardHits || 0}</div>
+          <div style="margin-top:10px">${routeRows}</div>
+        </div>
+        <div>
+          <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;margin-bottom:8px">By Strategy</div>
+          <div>${strategyRows}</div>
+        </div>
+      </div>
+      <div style="margin-top:14px">
+        <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Recent Customer Runtime Signals</div>
+        ${recentRows}
+      </div>
+    `;
+  } catch (e) {
+    el.innerHTML = `<div style="color:var(--muted);font-size:0.82rem">Observability unavailable: ${e.message}</div>`;
+  }
 }
 
 function updateFlowConfig(flow, path, value) {

@@ -1,13 +1,16 @@
 "use strict"
 
 const Database = require("better-sqlite3")
-const fetch    = require("node-fetch")
 const settings = require("../../../config/settings.json")
 const cart     = require("../../../tools/cartStore")
 const logger   = require("../../../gateway/logger")
-
-const SEND_URL    = `http://127.0.0.1:${settings.api.port}/send`
-const SEND_SECRET = settings.api.secret
+const {
+    normalisePhone,
+    detectIssueType,
+    isGenericHelpMessage,
+    looksLikeIssueDescription,
+    escalateToAdmin,
+} = require("../../../tools/supportFlow")
 
 const MENU = `How can we help you today?\n\n1. Wrong or missing item\n2. Late delivery\n3. Payment issue\n4. Request a refund\n5. Talk to a human\n\nReply with a number, or *0* to go back to main menu.`
 
@@ -47,7 +50,13 @@ const COMPLAINT_HINTS = [
     /\bhuman\b/i,
 ]
 
-function normalisePhone(p) { return String(p).replace(/@.*$/, "").replace(/\D/g, "") }
+const ISSUE_TYPE_PATTERNS = {
+    1: [/\bwrong\b/i, /\bmissing\b/i, /\bnot what\b/i, /\bincorrect\b/i, /\breceived\b/i],
+    2: [/\blate\b/i, /\bdelay(ed)?\b/i, /\bwaiting\b/i, /\bnot arrived\b/i, /\bwhere is\b/i, /\beta\b/i],
+    3: [/\bpayment\b/i, /\bupi\b/i, /\btransaction\b/i, /\bcharged\b/i, /\bdouble charged\b/i, /\bpaid\b/i],
+    4: [/\brefund\b/i, /\bcancel(lation|led)?\b/i, /\bmoney back\b/i, /\breturn\b/i],
+    5: [/\bhuman\b/i, /\bperson\b/i, /\bmanager\b/i, /\bagent\b/i, /\bcall me\b/i, /\bsomeone\b/i],
+}
 
 function getCustomerContext(dbPath, phone) {
     const last10 = normalisePhone(phone).slice(-10)
@@ -70,18 +79,15 @@ async function escalate(phone, issueLabel, issueText, customerContext, adminPhon
     const orders = customerContext.orders.map(o =>
         `• ${o.id} | ${o.order_for} | ₹${o.total} | ${o.delivery_status} | ${o.payment_status}`
     ).join("\n") || "No recent orders"
-    const to  = adminPhone.startsWith("+") ? adminPhone : `+${adminPhone}`
     const msg = `🚨 *Support Request*\n\n👤 ${name} (+${last10})\n📋 Issue: ${issueLabel}\n💬 "${issueText}"\n\n📦 Recent Orders:\n${orders}`
-    try {
-        await fetch(SEND_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-secret": SEND_SECRET },
-            body: JSON.stringify({ phone: to, message: msg })
-        })
-        logger.info({ phone }, "support: escalated to admin")
-    } catch (err) {
-        logger.error({ err }, "support: escalation failed")
-    }
+    await escalateToAdmin({
+        phone,
+        adminPhone,
+        body: msg,
+        logger,
+        successLog: "support: escalated to admin",
+        errorLog: "support: escalation failed",
+    })
 }
 
 function isSupportInfoQuestion(text) {
@@ -124,6 +130,13 @@ ${text}
     return deterministicSupportInfo(profile)
 }
 
+async function submitSupportIssue({ phone, issueType, text, dbPath, adminPhone }) {
+    const ctx = getCustomerContext(dbPath, phone)
+    await escalate(phone, LABELS[issueType] || "Support request", text, ctx, adminPhone)
+    cart.clear(`support:${phone}`)
+    return `Thank you! 🙏 We've received your message and our team will get back to you shortly.\n\nWe typically respond within 30 minutes during business hours.`
+}
+
 async function execute(_params, context, toolConfig) {
     const phone = context.phone
     const msg = context.resolvedRequest?.effectiveMessage || context.rawMessage
@@ -139,7 +152,23 @@ async function execute(_params, context, toolConfig) {
         return await answerSupportInfo(text, context)
     }
 
+    const inferredIssueType = detectIssueType(text, ISSUE_TYPE_PATTERNS)
+
+    if (!c && inferredIssueType && looksLikeIssueDescription(text)) {
+        return await submitSupportIssue({
+            phone,
+            issueType: inferredIssueType,
+            text,
+            dbPath: db_path,
+            adminPhone,
+        })
+    }
+
     if (!c) {
+        if (inferredIssueType) {
+            cart.set(key, { state: "collecting", issueType: inferredIssueType })
+            return PROMPTS[inferredIssueType]
+        }
         cart.set(key, { state: "menu" })
         return MENU
     }
@@ -155,6 +184,19 @@ async function execute(_params, context, toolConfig) {
             cart.clear(key)
             return null
         }
+        if (inferredIssueType && looksLikeIssueDescription(text)) {
+            return await submitSupportIssue({
+                phone,
+                issueType: inferredIssueType,
+                text,
+                dbPath: db_path,
+                adminPhone,
+            })
+        }
+        if (inferredIssueType) {
+            cart.update(key, { state: "collecting", issueType: inferredIssueType })
+            return PROMPTS[inferredIssueType]
+        }
         return `Please reply with a number between 1 and 5.\n\n${MENU}`
     }
 
@@ -165,10 +207,13 @@ async function execute(_params, context, toolConfig) {
         }
         if (text.length < 3) return "Please describe your issue so we can help you."
 
-        const ctx = getCustomerContext(db_path, phone)
-        await escalate(phone, LABELS[c.issueType], text, ctx, adminPhone)
-        cart.clear(key)
-        return `Thank you! 🙏 We've received your message and our team will get back to you shortly.\n\nWe typically respond within 30 minutes during business hours.`
+        return await submitSupportIssue({
+            phone,
+            issueType: c.issueType || inferredIssueType || 5,
+            text,
+            dbPath: db_path,
+            adminPhone,
+        })
     }
 
     cart.clear(key)

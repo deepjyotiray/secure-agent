@@ -121,11 +121,21 @@ Typical customer tools:
 - **`rag_menu`** — grounded menu lookup. Used for price, nutrition, veg/non-veg, calorie, protein, and dish filtering questions.
 - **`order_lookup`** — direct order lookup from the DB. No LLM required.
 - **`order_create`** — direct cart and ordering state machine. No LLM required.
-- **`restaurant_support`** — complaint flow for wrong item, refund, late delivery, or human escalation. It also answers profile-backed support questions like support email before opening the complaint menu.
+- **`restaurant_support`** — complaint flow for wrong item, refund, late delivery, or human escalation. It also answers profile-backed support questions like support email before opening the complaint menu, and accepts natural-language complaint replies instead of number-only menu input.
+
+### Unified Customer Profile Hydration
+
+At the start of every customer turn, the runtime now builds one merged `customerProfile`:
+
+1. DB-backed profile hydrated by phone from the active workspace database
+2. Saved conversational customer memory
+3. New facts stated in the current message
+
+That unified profile is then passed into planner decisions, backend customer context, and stateful tools. This makes customer self-profile questions like `what is my name` or `what address do you have for me` work from the same grounding model instead of depending on one specific tool doing its own DB lookup.
 
 ### Customer Flow In Plain English
 
-Think of customer messages in three buckets:
+Think of customer messages in four buckets:
 
 1. **Direct data questions**
 Examples: `My open orders`, `Where is my order`
@@ -139,6 +149,10 @@ What happens: routed to retrieval tools like `rag_menu` or `policy_rag`, which a
 Examples: `hi`, `tell me a joke`, `open hours`, `what is your support email`
 What happens: routed to `concierge` or the support info path, which use the configured customer LLM/backend with business profile context.
 If that backend returns nothing, the system now falls back to saved profile facts where possible.
+
+4. **Customer self-profile questions**
+Examples: `what is my name`, `what address do you have for me`
+What happens: the runtime hydrates a unified customer profile from the active workspace DB and saved customer memory before routing and response generation, so those answers can be grounded even if the customer never explicitly re-stated the value in chat.
 
 ### When The Customer LLM Is Actually Used
 
@@ -157,7 +171,7 @@ The live rule is simpler than the older mixed model:
 
 - If `Customer Flow` mode is `LLM`, the customer request stays on the LLM path.
 - If `Customer Flow` mode is `Backend Service`, the full customer request is sent to the backend service.
-- In backend mode, customer requests carry workspace context: profile facts, DB context, schema, notes, retrieval hints, and recent chat history.
+- In backend mode, customer requests carry workspace context: profile facts, hydrated customer profile, DB context, schema, notes, retrieval hints, and recent chat history.
 
 The `Agent Flow` still obeys its own mode, but it does **not** get business context injected.
 
@@ -271,7 +285,7 @@ DELETE /setup/agent/prompts
 
 ### The Workspace System
 
-The agent supports multiple workspaces — separate business profiles, each with its own DB path and governance policy. The active workspace is stored in `data/active-workspace.json`. Every DB query and every tool call governance check reads from the active workspace's profile.
+The agent supports multiple workspaces — separate business profiles, each with its own DB path and governance policy. The active workspace is stored in `data/active-workspace.json`. Every DB query, customer-profile hydration read, and every tool call governance check reads from the active workspace's profile.
 
 Current active workspace: `rays-home-kitchen`
 

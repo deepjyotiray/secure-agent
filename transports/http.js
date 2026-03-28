@@ -30,6 +30,9 @@ const debugInterceptor = require("../runtime/debugInterceptor")
 const { clearOpenClawSessions } = require("../gateway/adminAgent")
 const cartStore = require("../tools/cartStore")
 const yaml = require("js-yaml")
+const { normalizeCustomerExecutionConfig, validateCustomerExecutionConfig } = require("../runtime/customerExecutionConfig")
+const { listCustomerBackendPresets, getCustomerBackendPreset } = require("../runtime/customerBackendPresets")
+const { summarizeCustomerLog } = require("../runtime/customerObservability")
 
 const PORT   = settings.transports?.http?.port || 3010
 const SECRET = settings.api.secret
@@ -812,6 +815,7 @@ const server = http.createServer(async (req, res) => {
                 customer: { 
                     llm: cfg.customer?.llm || {}, 
                     backend: cfg.customer?.backend || "direct",
+                    execution: normalizeCustomerExecutionConfig(cfg.flows?.customer?.execution || {}),
                     auth: cfg.flows?.customer?.auth || {}
                 },
                 admin: { 
@@ -848,6 +852,9 @@ const server = http.createServer(async (req, res) => {
                 if (base?.llm || override?.llm) {
                     merged.llm = { ...(base?.llm || {}), ...(override?.llm || {}) }
                 }
+                if (base?.execution || override?.execution) {
+                    merged.execution = { ...(base?.execution || {}), ...(override?.execution || {}) }
+                }
                 if (override && Object.prototype.hasOwnProperty.call(override, "tools")) {
                     merged.tools = override.tools
                 } else if (base && Object.prototype.hasOwnProperty.call(base, "tools")) {
@@ -861,12 +868,29 @@ const server = http.createServer(async (req, res) => {
                 admin: mergeFlow(defaultFlows.admin, configuredFlows.admin),
                 agent: mergeFlow(defaultFlows.agent, configuredFlows.agent),
             }
+            resultFlows.customer.execution = normalizeCustomerExecutionConfig(resultFlows.customer.execution || {})
 
             sendJson(res, 200, { 
                 flows: resultFlows,
-                availableTools
+                availableTools,
+                customerBackendPresets: listCustomerBackendPresets(),
             })
         } catch (err) { sendJson(res, 500, { error: err.message }) }
+        return
+    }
+
+    if (req.method === "GET" && pathname === "/agent-config/customer-presets") {
+        if (!isSetupAuthorized(req) && req.headers["x-secret"] !== SECRET) { sendJson(res, 401, { error: "unauthorized" }); return }
+        sendJson(res, 200, { presets: listCustomerBackendPresets() })
+        return
+    }
+
+    if (req.method === "GET" && pathname.startsWith("/agent-config/customer-presets/")) {
+        if (!isSetupAuthorized(req) && req.headers["x-secret"] !== SECRET) { sendJson(res, 401, { error: "unauthorized" }); return }
+        const presetId = pathname.replace("/agent-config/customer-presets/", "")
+        const preset = getCustomerBackendPreset(presetId)
+        if (!preset) { sendJson(res, 404, { error: "preset_not_found" }); return }
+        sendJson(res, 200, { preset })
         return
     }
 
@@ -886,12 +910,27 @@ const server = http.createServer(async (req, res) => {
                     if (existing.llm || flowCfg.llm) {
                         merged.llm = { ...(existing.llm || {}), ...(flowCfg.llm || {}) }
                     }
+                    if (existing.execution || flowCfg.execution) {
+                        merged.execution = { ...(existing.execution || {}), ...(flowCfg.execution || {}) }
+                    }
                     if (flowCfg && Object.prototype.hasOwnProperty.call(flowCfg, "tools")) {
                         merged.tools = flowCfg.tools
                     } else if (existing && Object.prototype.hasOwnProperty.call(existing, "tools")) {
                         merged.tools = existing.tools
                     }
                     current.flows[flowName] = merged
+                    if (flowName === "customer") {
+                        const allowedIntentNames = (() => {
+                            try { return agentChain.getIntents().map(intent => intent.name) } catch { return [] }
+                        })()
+                        const validation = validateCustomerExecutionConfig(merged.execution || {}, allowedIntentNames)
+                        if (!validation.ok) {
+                            sendJson(res, 400, { error: validation.errors.join("; ") })
+                            return
+                        }
+                        merged.execution = validation.normalized
+                        current.flows[flowName].execution = validation.normalized
+                    }
                     if (flowName === "customer") {
                         if (!current.customer) current.customer = {}
                         if (merged.llm) current.customer.llm = { ...current.customer.llm, ...merged.llm }
@@ -1103,6 +1142,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && pathname === "/setup/debug/log") {
         const limit = Number(url.searchParams.get("limit")) || 50
         sendJson(res, 200, { ok: true, log: debugInterceptor.getLog(limit) })
+        return
+    }
+
+    if (req.method === "GET" && pathname === "/setup/customer/observability") {
+        const limit = Number(url.searchParams.get("limit")) || 100
+        sendJson(res, 200, { ok: true, summary: summarizeCustomerLog(debugInterceptor.getLog(limit)) })
         return
     }
 

@@ -9,14 +9,37 @@ function getGenericRag() {
     return _genericRag
 }
 
+function normalizeText(value = "") {
+    return String(value || "").trim().replace(/\s+/g, " ")
+}
+
+function isGreetingLikeMessage(message = "") {
+    const text = normalizeText(message).toLowerCase()
+    if (!text) return false
+    return /^(hi|hello|hey|namaste|good morning|good evening|good afternoon|thanks|thank you)\b/.test(text)
+}
+
+function looksLikeGreetingHint(text = "") {
+    const normalized = normalizeText(text).toLowerCase()
+    if (!normalized) return false
+    return /^hi[!,. ]|^hello[!,. ]|^welcome\b|how can i help\b/.test(normalized)
+}
+
 async function loadCatalogHints(message, toolConfig) {
+    if (isGreetingLikeMessage(message)) return ""
     if (!toolConfig.db_path) return ""
     const rag = getGenericRag()
     if (!rag) return ""
     try {
-        const result = await rag.execute({}, { rawMessage: message }, { db_path: toolConfig.db_path })
+        const result = await rag.execute({}, {
+            rawMessage: message,
+            skipLlm: true,
+            flow: "customer",
+        }, { db_path: toolConfig.db_path })
         if (!result || /nothing matched/i.test(result)) return ""
-        return result.split("\n").slice(0, 10).join("\n")
+        const condensed = result.split("\n").slice(0, 10).join("\n")
+        if (looksLikeGreetingHint(condensed)) return ""
+        return condensed
     } catch {
         return ""
     }

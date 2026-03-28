@@ -139,7 +139,10 @@ ${trimmed}
 Answer:`
 
         try {
-            const text = await complete(prompt)
+            const text = await complete(prompt, {
+                flow: context?.flow || "customer",
+                llmConfig: context?.llmConfig,
+            })
             return text || formatted
         } catch {
             return formatted

@@ -30,7 +30,7 @@ Three servers work together:
 - **ray-orders-backend** — your database, menu management, order processing, admin panel
 - **secure-agent** — the AI brain: WhatsApp connection, intent routing, menu search, ordering flow, support, admin agent
 
-The secure-agent reads from the same SQLite database that the orders backend writes to.
+The secure-agent reads from the same SQLite database that the orders backend writes to. That shared DB now powers customer-profile hydration too, so the bot can answer customer-specific questions like `what is my name` from the active workspace data when the phone number already exists in `users` or recent `orders`.
 
 ---
 
@@ -152,6 +152,13 @@ ls -la data/orders.db
 # Should show a symlink pointing to the real orders.db
 ```
 
+This DB link now powers three different behaviors:
+- ordering and order-status tools
+- support escalation context
+- customer-profile hydration by phone before routing and response generation
+
+If the symlink points to the wrong DB, customer-specific profile questions can look “missing” even when the backend has the record.
+
 ### 2c — agents/restaurant.yml
 
 Update the placeholder values in the manifest. The file is already structured — you only need to change these fields:
@@ -242,6 +249,19 @@ admin <your-pin> show today's orders
 The admin agent will query the database and respond with a summary.
 
 To add more admin users later, use the Setup UI at `http://localhost:3010/tools` → Admin Users section.
+
+### Test customer profile hydration
+
+After a customer has placed their first order, send:
+
+```text
+what is my name
+```
+
+Expected:
+- if the customer's phone exists in `users`, the bot should answer from the hydrated DB-backed profile
+- if the customer later says `call me Sam`, that conversational preference should override the canonical DB name in future chat replies
+- if neither the DB nor saved customer memory has the field, the bot should say it does not have that saved yet
 
 ---
 

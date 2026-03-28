@@ -56,6 +56,12 @@ function extractJson(text) {
     try { return JSON.parse(match[0]) } catch { return null }
 }
 
+function normalizeConfidence(value) {
+    const num = Number(value)
+    if (!Number.isFinite(num)) return 0
+    return Math.max(0, Math.min(1, num))
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 async function parseIntent(message, options = {}) {
@@ -76,6 +82,7 @@ async function parseIntent(message, options = {}) {
     const examples = useDefaultRules
         ? DEFAULT_FILTER_EXAMPLES
         : (options.filterExamples || [])
+    const contextSummary = String(options.contextSummary || "").trim()
 
     const prompt = `You are a WhatsApp business intent router for ${options.businessProfile || "a local business"}.
 Return JSON only. No markdown. No explanation.
@@ -89,6 +96,7 @@ Routing rules:
 - Never invent new intents outside the allowed list.
 - Reason over the full user request before choosing an intent or filters.
 - Preserve explicit constraints such as price caps, preferences, quantity, category, and comparisons.
+- Return a confidence between 0 and 1 for the chosen intent.
 
 Also extract an optional filter object:
 ${filterTemplate}
@@ -99,22 +107,28 @@ ${extractionRules}
 Examples:
 ${buildExamples(examples, defaultIntent)}
 
+${contextSummary ? `Conversation context:
+${contextSummary}
+
+Use the context to resolve short follow-ups and clarify whether the user is continuing an active business task.
+` : ""}
+
 If unsure, choose "${defaultIntent}".
 
 Message:
 ${message}
 
 Return exactly:
-{"intent":"${defaultIntent}","filter":${filterTemplate}}`
+{"intent":"${defaultIntent}","filter":${filterTemplate},"confidence":0.0}`
 
     try {
         const text = await complete(prompt, llmConfig)
         const parsed = extractJson(text)
-        if (!parsed || typeof parsed.intent !== "string") return { intent: defaultIntent, filter: {} }
-        if (!allowedIntents.includes(parsed.intent)) return { intent: defaultIntent, filter: {} }
-        return { intent: parsed.intent, filter: parsed.filter || {} }
+        if (!parsed || typeof parsed.intent !== "string") return { intent: defaultIntent, filter: {}, confidence: 0 }
+        if (!allowedIntents.includes(parsed.intent)) return { intent: defaultIntent, filter: {}, confidence: 0 }
+        return { intent: parsed.intent, filter: parsed.filter || {}, confidence: normalizeConfidence(parsed.confidence) }
     } catch {
-        return { intent: defaultIntent, filter: {} }
+        return { intent: defaultIntent, filter: {}, confidence: 0 }
     }
 }
 

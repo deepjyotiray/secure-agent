@@ -11,7 +11,8 @@ function lower(value = "") {
 }
 
 function getActiveReference(state = {}) {
-    if (state.selection?.label) {
+    const canUseSelection = !!(state.pending?.allowFollowUp || state.pending?.kind === "selection_order" || state.lastIntent === "show_menu")
+    if (canUseSelection && state.selection?.label) {
         return { label: normalizeText(state.selection.label), source: "selection" }
     }
     if (state.topic?.label) {
@@ -40,6 +41,9 @@ function isLikelyFollowUp(text) {
 function resolveCustomerFollowUp(message, state) {
     const text = normalizeText(message)
     const cleaned = lower(text)
+    if (state.selection?.items?.length && !state.pending?.allowFollowUp && state.lastIntent !== "show_menu") {
+        return null
+    }
     const ref = getActiveReference(state)
     if (!ref || !isLikelyFollowUp(text)) return null
 
@@ -75,7 +79,7 @@ function resolveCustomerFollowUp(message, state) {
         }
     }
 
-    if (/^(what about|how about|same for)\b/i.test(cleaned)) {
+    if ((state.pending?.allowFollowUp || state.lastIntent === "show_menu") && /^(what about|how about|same for)\b/i.test(cleaned)) {
         return {
             message: `${ref.label} ${text}`,
             reason: "carry_forward_topic",
@@ -83,7 +87,7 @@ function resolveCustomerFollowUp(message, state) {
         }
     }
 
-    if (/^(it|that|those|these|them|ones)\b/i.test(cleaned)) {
+    if ((state.pending?.allowFollowUp || state.lastIntent === "show_menu") && /^(it|that|those|these|them|ones)\b/i.test(cleaned)) {
         return {
             message: `${ref.label} ${text}`,
             reason: "pronoun_reference",
